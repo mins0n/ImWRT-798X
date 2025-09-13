@@ -1,8 +1,3 @@
-# GitHub Actions 工作流用于构建 ImmortalWrt 24.10 固件（基于内核 6.6）
-# 触发方式：
-# - repository_dispatch: 通过 API 触发（需要指定 build_firmware 类型）
-# - workflow_dispatch: 手动触发，支持选择设备型号和 5G 25dB 配置
-# - schedule: 每周五 UTC 07:00（北京时间 15:00）检查源仓库更新并构建
 name: IMwrt-24.10-6.6
 
 on:
@@ -48,8 +43,8 @@ on:
     - cron: '0 7 * * 5'  # 每周五 UTC 时间 07:00（北京时间 15:00）
 
 permissions:
-  contents: write  # 用于发布 GitHub Releases
-  actions: write   # 用于清理旧工作流运行
+  contents: write
+  actions: write
 
 env:
   REPO_URL: ${{ github.event.inputs.repo_url || 'https://github.com/padavanonly/immortalwrt-mt798x-24.10' }}
@@ -93,7 +88,7 @@ jobs:
         run: |
           LATEST_SHA=$(gh api repos/padavanonly/immortalwrt-mt798x-24.10/commits/$REPO_BRANCH --jq '.sha' || echo "")
           if [ -z "$LATEST_SHA" ]; then
-            echo "错误：无法获取 $REPO_URL 的最新 SHA，可能是网络问题或仓库/分支不存在"
+            echo "错误：无法获取 $REPO_URL 的最新 SHA"
             echo "should_build=false" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -120,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m", "xiaomi_mi-router-ax3000t"]') }}
+        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m", "cmcc_rax3000m-emmc"]') }}
       max-parallel: 18
     steps:
       - name: 调试信息
@@ -232,24 +227,24 @@ jobs:
         run: |
           cd openwrt
           make download -j8 || { echo "下载软件包失败"; exit 1; }
-          find dl -size -1024c -exec rm -fLas {} \; || echo "警告：无法清理 dl 目录中的小文件"
+          find dl -size -1024c -exec rm -f {} \; || echo "警告：无法清理 dl 目录中的小文件"
 
       - name: 修改 5G 25dB
         if: ${{ env.ENABLE_5G_25DB == 'true' }}
         working-directory: ./openwrt
         run: |
           EEPROM_FILE="package/mtk/drivers/mt_wifi/src/bin/mt7981/rebb/MT7981_iPAiLNA_EEPROM.bin"
-            if [ ! -f "$EEPROM_FILE" ]; then
+          if [ ! -f "$EEPROM_FILE" ]; then
             echo "错误：未找到 EEPROM 文件"
             exit 1
           fi
           EXPECTED_CONTENT=$(printf '\x2B%.0s' {1..20})
           CURRENT_CONTENT=$(dd if="$EEPROM_FILE" bs=1 skip=1093 count=20 2>/dev/null)
           if [ "$CURRENT_CONTENT" != "$EXPECTED_CONTENT" ]; then
-          printf '\x2B%.0s' {1..20} | dd of="$EEPROM_FILE" bs=1 seek=1093 conv=notrunc
-          echo "EEPROM 文件已更新: $EEPROM_FILE"
+            printf '\x2B%.0s' {1..20} | dd of="$EEPROM_FILE" bs=1 seek=1093 conv=notrunc
+            echo "EEPROM 文件已更新: $EEPROM_FILE"
           else
-          echo "EEPROM 文件无需修改: $EEPROM_FILE"
+            echo "EEPROM 文件无需修改: $EEPROM_FILE"
           fi
 
       - name: 编译固件
