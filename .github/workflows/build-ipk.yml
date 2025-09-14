@@ -221,4 +221,3 @@ jobs:
         with:
           name: ipk-mediatek_filogic-${{ env.VERSION }}
           path: openwrt/bin/packages/*/base/*.ipk
-```
