@@ -211,6 +211,25 @@ jobs:
           fi
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
+      - name: 修改 5G 25dB
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true'
+        working-directory: ./openwrt
+        run: |
+          EEPROM_FILE=package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin
+          EXPECTED_CONTENT=$(printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B')
+          if [ ! -f "$EEPROM_FILE" ]; then
+            echo "EEPROM 文件不存在，创建新文件"
+            mkdir -p "$(dirname "$EEPROM_FILE")"
+            touch "$EEPROM_FILE"
+          fi
+          CURRENT_CONTENT=$(dd if="$EEPROM_FILE" bs=1 skip=$((0x445)) count=20 2>/dev/null || echo "")
+          if [ "$CURRENT_CONTENT" != "$EXPECTED_CONTENT" ]; then
+            printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B' | dd of="$EEPROM_FILE" bs=1 seek=$((0x445)) conv=notrunc
+            echo "EEPROM 文件已更新"
+          else
+            echo "EEPROM 文件无需修改"
+          fi          
+
       - name: 缓存 OpenWrt 下载
         if: hashFiles('**/feeds.conf.default') != ''
         uses: actions/cache@v4
