@@ -15,7 +15,7 @@ on:
           - huasifei_wh3000-emmc
           - abt_asr3000
           - cetron_ct3003
-          - - cmcc_a10
+          - cmcc_a10
           - h3c_nx30pro
           - imou_lc-hx3001
           - jcg_q30
