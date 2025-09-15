@@ -60,7 +60,6 @@ env:
   WEBDAV_USERNAME: ${{ secrets.WEBDAV_USERNAME }}
   WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
   ENABLE_5G_25DB: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.enable_5g_25db || secrets.ENABLE_5G_25DB || 'false' }}
-  RETAIN_RELEASES: 4  # 保留最新 N 个 Release
 
 jobs:
   check-source-updates:
@@ -71,23 +70,11 @@ jobs:
       - name: 检出本仓库代码
         uses: actions/checkout@v4
 
-      - name: 设置仓库哈希
-        run: |
-          REPO_HASH=$(echo -n "${{ env.REPO_URL }}:${{ env.REPO_BRANCH }}" | sha256sum | cut -d' ' -f1)
-          echo "REPO_HASH=$REPO_HASH" >> $GITHUB_ENV
-
       - name: 下载上次检查的 SHA
         uses: actions/download-artifact@v4
         with:
-          name: last-checked-sha-${{ env.REPO_HASH }}
+          name: last-checked-sha
         continue-on-error: true
-
-      - name: 提取仓库信息
-        run: |
-          REPO_OWNER=$(echo "${{ env.REPO_URL }}" | sed 's|https://github.com/||' | cut -d'/' -f1)
-          REPO_NAME=$(echo "${{ env.REPO_URL }}" | sed 's|https://github.com/||' | cut -d'/' -f2 | sed 's|/$||')
-          echo "REPO_OWNER=$REPO_OWNER" >> $GITHUB_ENV
-          echo "REPO_NAME=$REPO_NAME" >> $GITHUB_ENV
 
       - name: 安装 GitHub CLI
         run: |
@@ -99,9 +86,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LATEST_SHA=$(gh api repos/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}/commits/${{ env.REPO_BRANCH }} --jq '.sha' || echo "")
+          LATEST_SHA=$(gh api repos/padavanonly/immortalwrt-mt798x-24.10/commits/$REPO_BRANCH --jq '.sha' || echo "")
           if [ -z "$LATEST_SHA" ]; then
-            echo "错误：无法获取 ${{ env.REPO_URL }} 的最新 SHA"
+            echo "错误：无法获取 $REPO_URL 的最新 SHA"
             echo "should_build=false" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -117,21 +104,19 @@ jobs:
           fi
 
       - name: 上传上次检查的 SHA
-        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: last-checked-sha-${{ env.REPO_HASH }}
+          name: last-checked-sha
           path: last_checked_sha.txt
-          retention-days: 7
 
   build:
     needs: check-source-updates
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch' || needs.check-source-updates.outputs.should_build == 'true'
+    if: github.event_name == 'workflow_dispatch' || needs.check-source-updates.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m", "cmcc_rax3000m-emmc", "xiaomi_mi-router-ax3000t", "jcg_q30"]') }}
-      max-parallel: 24  # 增加并行度以提升吞吐量
+        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m", "cmcc_rax3000m-emmc"]') }}
+      max-parallel: 18
     steps:
       - name: 调试信息
         run: |
@@ -142,16 +127,6 @@ jobs:
 
       - name: 检出代码
         uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Cache Docker layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: ${{ runner.os }}-buildx-
 
       - name: 检查磁盘空间
         run: |
@@ -177,9 +152,10 @@ jobs:
             ninja-build python3 python3-pip python3-ply python3-docutils python3-pyelftools \
             rsync unzip vim wget zlib1g-dev squashfs-tools device-tree-compiler zstd \
             binutils bison flex gettext p7zip p7zip-full patch pkgconf \
-            autopoint asciidoc xmlto texinfo jq
+            autopoint asciidoc xmlto texinfo
           sudo apt-get autoremove --purge -y
           sudo apt-get clean
+          sudo timedatectl set-timezone "$TZ" || echo "警告：无法设置时区"
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
 
@@ -210,43 +186,6 @@ jobs:
             exit 1
           fi
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-
-      - name: 修改 5G 25dB
-        if: github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true'
-        working-directory: ./openwrt
-        run: |
-          EEPROM_FILE=package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin
-          EXPECTED_CONTENT=$(printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B')
-          if [ ! -f "$EEPROM_FILE" ]; then
-            echo "EEPROM 文件不存在，创建新文件"
-            mkdir -p "$(dirname "$EEPROM_FILE")"
-            touch "$EEPROM_FILE"
-          fi
-          CURRENT_CONTENT=$(dd if="$EEPROM_FILE" bs=1 skip=$((0x445)) count=20 2>/dev/null || echo "")
-          if [ "$CURRENT_CONTENT" != "$EXPECTED_CONTENT" ]; then
-            printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B' | dd of="$EEPROM_FILE" bs=1 seek=$((0x445)) conv=notrunc
-            echo "EEPROM 文件已更新"
-          else
-            echo "EEPROM 文件无需修改"
-          fi          
-
-      - name: 缓存 OpenWrt 下载
-        if: hashFiles('**/feeds.conf.default') != ''
-        uses: actions/cache@v4
-        with:
-          path: openwrt/dl
-          key: ${{ runner.os }}-openwrt-dl-${{ hashFiles('openwrt/feeds.conf.default') }}-${{ env.REPO_BRANCH }}
-          restore-keys: ${{ runner.os }}-openwrt-dl-
-
-      - name: Cache OpenWrt toolchain and feeds
-        uses: actions/cache@v4
-        with:
-          path: |
-            openwrt/staging_dir
-            openwrt/build_dir
-            openwrt/tmp
-          key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/.config') }}-${{ env.REPO_BRANCH }}-${{ matrix.device_model }}
-          restore-keys: ${{ runner.os }}-openwrt-${{ env.REPO_BRANCH }}-
 
       - name: 验证脚本文件
         run: |
@@ -279,15 +218,9 @@ jobs:
           [ -e files ] && mv files openwrt/files
           [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
           echo "CONFIG_TARGET_mediatek_filogic_DEVICE_${{ matrix.device_model }}=y" >> openwrt/.config
-          # 优化固件空间：移除不必要的包
-          echo "# Remove debug and unused modules" >> openwrt/.config
-          echo "CONFIG_PACKAGE_luci-app-debug=y" >> openwrt/.config  # 示例：仅保留必需项，根据设备调整
-          echo "CONFIG_PACKAGE_kmod-usb-net=y=n" >> openwrt/.config  # 禁用无关驱动
           cd openwrt
-          export ENABLE_5G_25DB=${{ env.ENABLE_5G_25DB }}  # 传递环境变量到脚本
           $GITHUB_WORKSPACE/$DIY_P2_SH
           make defconfig
-          make menuconfig -s  # 静默应用配置更改
 
       - name: 下载软件包
         timeout-minutes: 30
@@ -296,12 +229,24 @@ jobs:
           make download -j8 || { echo "下载软件包失败"; exit 1; }
           find dl -size -1024c -exec rm -f {} \; || echo "警告：无法清理 dl 目录中的小文件"
 
-      - name: Clean build directory
-        if: env.CACHE_HIT != 'true'
+      - name: 修改 5G 25dB
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true'
+        working-directory: ./openwrt
         run: |
-          cd openwrt
-          make clean
-          echo "Build directory cleaned"
+          EEPROM_FILE=package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin
+          EXPECTED_CONTENT=$(printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B')
+          if [ ! -f "$EEPROM_FILE" ]; then
+            echo "EEPROM 文件不存在，创建新文件"
+            mkdir -p "$(dirname "$EEPROM_FILE")"
+            touch "$EEPROM_FILE"
+          fi
+          CURRENT_CONTENT=$(dd if="$EEPROM_FILE" bs=1 skip=$((0x445)) count=20 2>/dev/null || echo "")
+          if [ "$CURRENT_CONTENT" != "$EXPECTED_CONTENT" ]; then
+            printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B' | dd of="$EEPROM_FILE" bs=1 seek=$((0x445)) conv=notrunc
+            echo "EEPROM 文件已更新"
+          else
+            echo "EEPROM 文件无需修改"
+          fi
 
       - name: 编译固件
         id: compile
@@ -324,39 +269,26 @@ jobs:
             openwrt/logs/**/*
             openwrt/*.log
 
-      - name: Validate firmware integrity
-        id: validate
-        if: steps.compile.outputs.status == 'success'
-        run: |
-          cd openwrt/bin/targets/*/*
-          for file in *sysupgrade* *factory*; do
-            if [ -f "$file" ]; then
-              md5sum "$file" > "${file}.md5"
-              echo "Generated MD5 for $file"
-              # 模拟 sysupgrade 检查（基本完整性验证）
-              sysupgrade -T /lib/upgrade/test.sh "$file" || echo "Warning: Sysupgrade test incomplete"
-            fi
-          done
-          echo "status=success" >> $GITHUB_OUTPUT
-
       - name: 提取固件版本号
         id: version
-        if: steps.validate.outputs.status == 'success'
+        if: steps.compile.outputs.status == 'success'
         run: |
           cd openwrt
           if [ -f openwrt_release ]; then
             VERSION=$(grep -E "^DISTRIB_REVISION=" openwrt_release | cut -d"'" -f2 | sed 's/\(r[0-9]\+\).*/\1/' | tr -d '[:space:]' || echo "unknown")
             echo "提取的纯版本号: $VERSION"
+            echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
+            echo "status=success" >> $GITHUB_OUTPUT
           else
             VERSION=$(git rev-parse --short HEAD | cut -d'-' -f1 || echo "unknown")
             echo "openwrt_release 文件不存在，使用 Git 提交哈希: $VERSION"
+            echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
+            echo "status=success" >> $GITHUB_OUTPUT
           fi
-          echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_OUTPUT
 
       - name: 整理固件并固定文件名
         id: organize
-        if: env.UPLOAD_FIRMWARE == 'true' && steps.version.outputs.status == 'success'
+        if: env.UPLOAD_FIRMWARE == 'true' && steps.compile.outputs.status == 'success'
         run: |
           set -e
           cd openwrt/bin/targets/*/*
@@ -365,8 +297,7 @@ jobs:
             if [ -f "$file" ] && ! echo "$file" | grep -q "-bl2"; then
               TYPE=$(echo "$file" | grep -o "sysupgrade\|factory")
               EXT="${file##*.}"
-              POWER_SUFFIX="_25dB-${{ env.ENABLE_5G_25DB == 'true' && 'on' || 'off' }}"
-              NEW_NAME="${{ matrix.device_model }}${POWER_SUFFIX}_${{ env.FIRMWARE_VERSION }}_${{ env.FILE_DATE }}$_${TYPE}.${EXT}"
+              NEW_NAME="${{ matrix.device_model }}_25dB-${{ env.ENABLE_5G_25DB == 'true' && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}_${{ env.FILE_DATE }}_${TYPE}.${EXT}"
               mv "$file" "$NEW_NAME"
             fi
           done
@@ -375,7 +306,7 @@ jobs:
 
       - name: 生成标签和发布描述
         id: tag
-        if: env.UPLOAD_RELEASE == 'true' && steps.organize.outputs.status == 'success'
+        if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success'
         run: |
           set -e
           echo "RELEASE_TAG=ImmortalWrt-24.10-${{ matrix.device_model }}-${{ env.FIRMWARE_VERSION }}" >> $GITHUB_OUTPUT
@@ -385,21 +316,7 @@ jobs:
           **编译时间**: $(date +"%Y-%m-%d %H:%M %Z")
           **高功率模式**: ${{ env.ENABLE_5G_25DB == 'true' && '已启用' || '未启用' }}
           EOF
-          # 生成 JSON 元信息
-          cd openwrt
-          opkg list-installed > installed_packages.txt  # 如果 opkg 可用
-          jq -n --arg version "${{ env.FIRMWARE_VERSION }}" --arg device "${{ matrix.device_model }}" --slurps installed_packages.txt '{version: $version, device: $device, packages: .}' > firmware_metadata.json
           echo "status=success" >> $GITHUB_OUTPUT
-
-      - name: 上传元信息工件
-        if: steps.tag.outputs.status == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: firmware-metadata-${{ matrix.device_model }}
-          path: |
-            release.txt
-            openwrt/firmware_metadata.json
-          retention-days: 30
 
       - name: 发布固件
         uses: softprops/action-gh-release@v2
@@ -415,7 +332,7 @@ jobs:
           overwrite: true
 
       - name: 验证 WebDAV 环境变量
-        if: steps.tag.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
+        if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
         run: |
           if [ -z "${{ env.WEBDAV_URL }}" ] || [ -z "${{ env.WEBDAV_USERNAME }}" ] || [ -z "${{ env.WEBDAV_PASSWORD }}" ]; then
             echo "错误：WebDAV 环境变量未正确配置"
@@ -424,9 +341,9 @@ jobs:
           echo "WebDAV 环境变量验证通过"
 
       - name: 上传到 WebDAV
-        if: steps.tag.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
+        if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
         env:
-          FILE_DATE: $(date +%Y%m%d%H%M)
+          FILE_DATE: $(date +%Y%m%d)
         run: |
           set -e
           echo "正在查找固件文件..."
@@ -437,10 +354,7 @@ jobs:
           fi
           echo "找到文件: $FIRMWARE_FILES"
           for FILE in $FIRMWARE_FILES; do
-            BASENAME=$(basename "$FILE")
-            EXT="${BASENAME##*.}"
-            NAME_WO_EXT="${BASENAME%.*}"
-            NEW_NAME="${{ matrix.device_model }}_${NAME_WO_EXT }-${FILE_DATE}.${EXT}"
+            NEW_NAME="${{ matrix.device_model }}_$(basename "$FILE" | sed "s/\.\([^.]*\)$/-${{ env.FILE_DATE }}.\1/")"
             echo "上传: $FILE → $NEW_NAME"
             RESPONSE=$(curl --retry 3 --retry-delay 5 -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
                    -T "$FILE" \
@@ -458,12 +372,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          OLD_RELEASES=$(gh release list --repo ${{ github.repository }} --limit 100 --json tagName --jq --arg pattern "ImmortalWrt-24.10-${{ matrix.device_model }}" '.[] | select(.tagName | test($pattern)) | .tagName' | tail -n +$((RETAIN_RELEASES + 1)))
-          if [ -n "$OLD_RELEASES" ]; then
-            echo "$OLD_RELEASES" | xargs -I {} gh release delete {} --yes || echo "警告：删除某些旧 Release 失败"
-          else
-            echo "无旧 Release 需要清理"
-          fi
+          gh release list --repo ${{ github.repository }} --limit 20 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10-${{ matrix.device_model }}")) | .name' | tail -n +5 | xargs -I {} gh release delete {} --yes || echo "警告：删除 Release {} 失败"
 
       - name: 清理旧工作流运行
         if: steps.tag.outputs.status == 'success'
