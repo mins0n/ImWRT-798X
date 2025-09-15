@@ -198,36 +198,13 @@ jobs:
             exit 1
           fi
           chmod +x $DIY_P1_SH $DIY_P2_SH
-
-      - name: 加载 Feeds
-        timeout-minutes: 10
-        run: |
-          [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-          cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P1_SH
-
-      - name: 更新 Feeds
-        timeout-minutes: 30
-        run: |
-          cd openwrt
-          ./scripts/feeds update -a || { echo "更新 Feeds 失败"; exit 1; }
-          ./scripts/feeds install -a || { echo "安装 Feeds 失败"; exit 1; }
-
-      - name: 加载配置
-        run: |
-          [ -e files ] && mv files openwrt/files
-          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_${{ matrix.device_model }}=y" >> openwrt/.config
-          cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P2_SH
-          make defconfig
-
+          
       - name: 修改 5G 25dB EEPROM
         shell: bash
         run: |
           set -e
 
-          EEPROM_FILE="package/mtk/drivers/mt_wifi/src/bin/mt7981/rebb/MT7981_iPAiLNA_EEPROM.bin"
+          EEPROM_FILE="package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin"
           OFFSET=$((0x445))   # 十六进制 0x445 = 十进制 1093
           PATCH_BYTES='\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B'
           PATCH_LEN=20
@@ -252,6 +229,30 @@ jobs:
             echo "EEPROM 文件无需修改: $EEPROM_FILE"
           fi
           
+      - name: 加载 Feeds
+        timeout-minutes: 10
+        run: |
+          [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P1_SH
+
+      - name: 更新 Feeds
+        timeout-minutes: 30
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a || { echo "更新 Feeds 失败"; exit 1; }
+          ./scripts/feeds install -a || { echo "安装 Feeds 失败"; exit 1; }
+
+      - name: 加载配置
+        run: |
+          [ -e files ] && mv files openwrt/files
+          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_${{ matrix.device_model }}=y" >> openwrt/.config
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P2_SH
+          make defconfig
+
+
       - name: 下载软件包
         timeout-minutes: 30
         run: |
