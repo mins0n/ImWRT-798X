@@ -42,3 +42,38 @@ else
   echo "错误：$EEPROM_FILE 不存在，无法创建符号链接"
   exit 1
 fi
+
+# 修改 5G 25dB EEPROM（仅当 ENABLE_5G_25DB 为 true 时执行）
+if [ "$ENABLE_5G_25DB" == "true" ]; then
+  echo "启用 5G 25dB EEPROM 修改"
+  OFFSET=$((0x445))   # 十六进制 0x445 = 十进制 1093
+  PATCH_BYTES='\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B'
+  PATCH_LEN=20
+
+  echo "当前目录: $(pwd)"
+  ls -lh package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/ || true
+
+  if [ ! -f "$EEPROM_FILE" ]; then
+    echo "错误：未找到 EEPROM 文件: $EEPROM_FILE" >&2
+    echo "尝试查找所有位置："
+    find . -name MT7981_iPAiLNA_EEPROM.bin || true
+    exit 1
+  fi
+
+  if [ "$(echo -n -e "$PATCH_BYTES" | wc -c)" -ne "$PATCH_LEN" ]; then
+    echo "错误：PATCH_BYTES 长度不匹配，预期 $PATCH_LEN 字节，实际 $(echo -n -e "$PATCH_BYTES" | wc -c) 字节" >&2
+    exit 2
+  fi
+
+  CURRENT_CONTENT=$(dd if="$EEPROM_FILE" bs=1 skip=$OFFSET count=$PATCH_LEN 2>/dev/null | hexdump -v -e '/1 "\\x%02X"')
+  TARGET_CONTENT=$(echo -n -e "$PATCH_BYTES" | hexdump -v -e '/1 "\\x%02X"')
+
+  if [ "$CURRENT_CONTENT" != "$TARGET_CONTENT" ]; then
+    echo -n -e "$PATCH_BYTES" | dd of="$EEPROM_FILE" bs=1 seek=$OFFSET count=$PATCH_LEN conv=notrunc status=none
+    echo "EEPROM 文件已更新: $EEPROM_FILE"
+  else
+    echo "EEPROM 文件无需修改: $EEPROM_FILE"
+  fi
+else
+  echo "5G 25dB EEPROM 修改未启用"
+fi
