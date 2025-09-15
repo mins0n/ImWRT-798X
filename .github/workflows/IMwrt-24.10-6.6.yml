@@ -138,6 +138,37 @@ jobs:
           fi
           echo "可用磁盘空间：${AVAILABLE}G"
 
+      - name: 初始化环境
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            build-essential ccache cmake curl git gawk gcc-multilib g++-multilib \
+            libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev \
+            libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool \
+            ninja-build python3 python3-pip python3-ply python3-docutils python3-pyelftools \
+            rsync unzip vim wget zlib1g-dev squashfs-tools device-tree-compiler zstd \
+            binutils bison flex gettext p7zip p7zip-full patch pkgconf \
+            autopoint asciidoc xmlto texinfo
+          sudo apt-get autoremove --purge -y
+          sudo apt-get clean
+          sudo timedatectl set-timezone "$TZ" || echo "警告：无法设置时区"
+          sudo mkdir -p /workdir
+          sudo chown $USER:$GROUPS /workdir
+
+      - name: 配置 ccache
+        run: |
+          echo "export PATH=/usr/lib/ccache:$PATH" >> $GITHUB_ENV
+          echo "export CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+          ccache -M 5G
+
+      - name: 安装 GitHub CLI
+        run: |
+          sudo apt-get install -y gh
+
       - name: 克隆源码
         working-directory: /workdir
         run: |
@@ -155,36 +186,6 @@ jobs:
             exit 1
           fi
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-
-      - name: 修改 5G 25dB EEPROM
-        shell: bash
-        run: |
-          set -e
-
-          EEPROM_FILE="package/mtk/drivers/mt_wifi/src/bin/mt7981/rebb/MT7981_iPAiLNA_EEPROM.bin"
-          OFFSET=$((0x445))   # 十六进制 0x445 = 十进制 1093
-          PATCH_BYTES='\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B'
-          PATCH_LEN=20
-
-          if [ ! -f "$EEPROM_FILE" ]; then
-            echo "错误：未找到 EEPROM 文件: $EEPROM_FILE" >&2
-            exit 1
-          fi
-
-          if [ "$(echo -n -e "$PATCH_BYTES" | wc -c)" -ne "$PATCH_LEN" ]; then
-            echo "错误：PATCH_BYTES 长度不匹配，预期 $PATCH_LEN 字节，实际 $(echo -n -e "$PATCH_BYTES" | wc -c) 字节" >&2
-            exit 2
-          fi
-
-          CURRENT_CONTENT=$(dd if="$EEPROM_FILE" bs=1 skip=$OFFSET count=$PATCH_LEN 2>/dev/null | hexdump -v -e '/1 "\\x%02X"')
-          TARGET_CONTENT=$(echo -n -e "$PATCH_BYTES" | hexdump -v -e '/1 "\\x%02X"')
-
-          if [ "$CURRENT_CONTENT" != "$TARGET_CONTENT" ]; then
-            echo -n -e "$PATCH_BYTES" | dd of="$EEPROM_FILE" bs=1 seek=$OFFSET count=$PATCH_LEN conv=notrunc status=none
-            echo "EEPROM 文件已更新: $EEPROM_FILE"
-          else
-            echo "EEPROM 文件无需修改: $EEPROM_FILE"
-          fi
 
       - name: 验证脚本文件
         run: |
@@ -221,6 +222,36 @@ jobs:
           $GITHUB_WORKSPACE/$DIY_P2_SH
           make defconfig
 
+      - name: 修改 5G 25dB EEPROM
+        shell: bash
+        run: |
+          set -e
+
+          EEPROM_FILE="package/mtk/drivers/mt_wifi/src/bin/mt7981/rebb/MT7981_iPAiLNA_EEPROM.bin"
+          OFFSET=$((0x445))   # 十六进制 0x445 = 十进制 1093
+          PATCH_BYTES='\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B'
+          PATCH_LEN=20
+
+          if [ ! -f "$EEPROM_FILE" ]; then
+            echo "错误：未找到 EEPROM 文件: $EEPROM_FILE" >&2
+            exit 1
+          fi
+
+          if [ "$(echo -n -e "$PATCH_BYTES" | wc -c)" -ne "$PATCH_LEN" ]; then
+            echo "错误：PATCH_BYTES 长度不匹配，预期 $PATCH_LEN 字节，实际 $(echo -n -e "$PATCH_BYTES" | wc -c) 字节" >&2
+            exit 2
+          fi
+
+          CURRENT_CONTENT=$(dd if="$EEPROM_FILE" bs=1 skip=$OFFSET count=$PATCH_LEN 2>/dev/null | hexdump -v -e '/1 "\\x%02X"')
+          TARGET_CONTENT=$(echo -n -e "$PATCH_BYTES" | hexdump -v -e '/1 "\\x%02X"')
+
+          if [ "$CURRENT_CONTENT" != "$TARGET_CONTENT" ]; then
+            echo -n -e "$PATCH_BYTES" | dd of="$EEPROM_FILE" bs=1 seek=$OFFSET count=$PATCH_LEN conv=notrunc status=none
+            echo "EEPROM 文件已更新: $EEPROM_FILE"
+          else
+            echo "EEPROM 文件无需修改: $EEPROM_FILE"
+          fi
+          
       - name: 下载软件包
         timeout-minutes: 30
         run: |
@@ -228,37 +259,6 @@ jobs:
           make download -j8 || { echo "下载软件包失败"; exit 1; }
           find dl -size -1024c -exec rm -f {} \; || echo "警告：无法清理 dl 目录中的小文件"
 
-
-      - name: 初始化环境
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force
-          sudo apt-get update -y
-          sudo apt-get install -y \
-            build-essential ccache cmake curl git gawk gcc-multilib g++-multilib \
-            libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev \
-            libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool \
-            ninja-build python3 python3-pip python3-ply python3-docutils python3-pyelftools \
-            rsync unzip vim wget zlib1g-dev squashfs-tools device-tree-compiler zstd \
-            binutils bison flex gettext p7zip p7zip-full patch pkgconf \
-            autopoint asciidoc xmlto texinfo
-          sudo apt-get autoremove --purge -y
-          sudo apt-get clean
-          sudo timedatectl set-timezone "$TZ" || echo "警告：无法设置时区"
-          sudo mkdir -p /workdir
-          sudo chown $USER:$GROUPS /workdir
-
-      - name: 配置 ccache
-        run: |
-          echo "export PATH=/usr/lib/ccache:$PATH" >> $GITHUB_ENV
-          echo "export CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
-          ccache -M 5G
-
-      - name: 安装 GitHub CLI
-        run: |
-          sudo apt-get install -y gh
 
       - name: 编译固件
         id: compile
