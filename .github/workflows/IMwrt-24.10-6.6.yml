@@ -273,18 +273,25 @@ jobs:
         id: version
         if: steps.compile.outputs.status == 'success'
         run: |
-          cd openwrt
-          if [ -f openwrt_release ]; then
-            VERSION=$(grep -E "^DISTRIB_REVISION=" openwrt_release | cut -d"'" -f2 | sed 's/\(r[0-9]\+\).*/\1/' | tr -d '[:space:]' || echo "unknown")
-            echo "提取的纯版本号: $VERSION"
-            echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
-            echo "status=success" >> $GITHUB_OUTPUT
-          else
-            VERSION=$(git rev-parse --short HEAD | cut -d'-' -f1 || echo "unknown")
-            echo "openwrt_release 文件不存在，使用 Git 提交哈希: $VERSION"
-            echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
-            echo "status=success" >> $GITHUB_OUTPUT
-          fi
+           cd openwrt
+
+           # 自动查找 build.version 文件
+           VERSION_FILE=$(find ./bin/targets -type f -name "build.version" | head -n 1)
+
+           if [ -f "$VERSION_FILE" ]; then
+           echo "找到版本文件: $VERSION_FILE"
+           RAW_VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+           VERSION=$(echo "$RAW_VERSION" | grep -oE "r[0-9]+")
+           VERSION=${VERSION:-unknown}
+           echo "提取的版本号: $VERSION"
+           else
+           echo "未找到 build.version 文件，使用 Git 哈希作为版本号"
+            VERSION=$(git rev-parse --short HEAD || echo "unknown")
+           fi
+
+           echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
+           echo "status=success" >> $GITHUB_OUTPUT
+
 
       - name: 整理固件并固定文件名
         id: organize
