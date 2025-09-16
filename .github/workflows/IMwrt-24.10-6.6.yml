@@ -279,24 +279,33 @@ jobs:
             openwrt/logs/**/*
             openwrt/*.log
 
-      - name: 提取固件版本号
-        id: version
-        if: steps.compile.outputs.status == 'success'
-        run: |
-          cd openwrt
-          VERSION_FILE=$(find ./bin/targets -type f -name "build.version" | head -n 1)
-          if [ -f "$VERSION_FILE" ]; then
-            echo "找到版本文件: $VERSION_FILE"
-            RAW_VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
-            VERSION=$(echo "$RAW_VERSION" | grep -oE "r[0-9]+")
-            VERSION=${VERSION:-unknown}
-            echo "提取的版本号: $VERSION"
-          else
-            echo "未找到 build.version 文件，使用 Git 哈希作为版本号"
-            VERSION=$(git rev-parse --short HEAD || echo "unknown")
-          fi
-          echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_OUTPUT
+- name: 智能提取版本号
+  id: version
+  if: steps.compile.outputs.status == 'success'
+  run: |
+    cd openwrt
+
+    # 自动查找包含版本号的文件（优先 build.version）
+    VERSION_FILE=$(find ./bin/targets -type f -name "build.version" | head -n 1)
+
+    if [ -n "$VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
+      echo "找到版本文件: $VERSION_FILE"
+      RAW_VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+      VERSION=$(echo "$RAW_VERSION" | grep -oE "r[0-9]+")
+      VERSION=${VERSION:-unknown}
+    else
+      echo "未找到 build.version，尝试从 release tag 提取"
+
+      # 尝试从 GitHub Release Tag 提取（例如 ImmortalWrt-24.10-cmcc_rax3000m-e995c7ba2b）
+      TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+      VERSION=$(echo "$TAG" | grep -oE "r[0-9]+")
+      VERSION=${VERSION:-unknown}
+    fi
+
+    echo "最终提取版本号: $VERSION"
+    echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
+    echo "status=success" >> $GITHUB_OUTPUT
+
 
       - name: 整理固件并固定文件名
         id: organize
