@@ -33,14 +33,6 @@ on:
         type: boolean
         required: true
         default: false
-      runner_type:
-        description: '选择运行器类型'
-        type: choice
-        required: true
-        default: 'ubuntu-latest'
-        options:
-          - ubuntu-latest
-          - self-hosted
       repo_url:
         description: '源仓库 URL'
         default: 'https://github.com/padavanonly/immortalwrt-mt798x-24.10'
@@ -71,16 +63,56 @@ env:
 
 jobs:
   check-source-updates:
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.runner_type || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
     steps:
-      # ... (unchanged steps for check-source-updates job) ...
+      - name: 检出本仓库代码
+        uses: actions/checkout@v4
+
+      - name: 下载上次检查的 SHA
+        uses: actions/download-artifact@v4
+        with:
+          name: last-checked-sha
+        continue-on-error: true
+
+      - name: 安装 GitHub CLI
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y gh
+
+      - name: 检查源仓库更新
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST_SHA=$(gh api repos/padavanonly/immortalwrt-mt798x-24.10/commits/$REPO_BRANCH --jq '.sha' || echo "")
+          if [ -z "$LATEST_SHA" ]; then
+            echo "错误：无法获取 $REPO_URL 的最新 SHA"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          LAST_CHECKED_FILE="last_checked_sha.txt"
+          LAST_CHECKED_SHA=$(cat "$LAST_CHECKED_FILE" 2>/dev/null || echo "")
+          if [ "$LATEST_SHA" != "$LAST_CHECKED_SHA" ]; then
+            echo "检测到源仓库更新：$LATEST_SHA"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "$LATEST_SHA" > "$LAST_CHECKED_FILE"
+          else
+            echo "源仓库无更新，跳过编译"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 上传上次检查的 SHA
+        uses: actions/upload-artifact@v4
+        with:
+          name: last-checked-sha
+          path: last_checked_sha.txt
 
   build:
     needs: check-source-updates
     if: github.event_name == 'workflow_dispatch' || needs.check-source-updates.outputs.should_build == 'true'
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.runner_type || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m", "cmcc_rax3000m-emmc"]') }}
