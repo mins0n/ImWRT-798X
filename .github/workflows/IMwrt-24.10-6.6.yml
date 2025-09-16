@@ -142,22 +142,32 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force
+          # 设置 APT 缓存
+          sudo mkdir -p /var/cache/apt/archives
+          sudo chown $USER:$GROUPS /var/cache/apt/archives
+          # 更新 APT 源并安装必要软件包
           sudo apt-get update -y
-          sudo apt-get install -y \
-            build-essential ccache cmake curl git gawk gcc-multilib g++-multilib \
-            libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev \
-            libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool \
-            ninja-build python3 python3-pip python3-ply python3-docutils python3-pyelftools \
-            rsync unzip vim wget zlib1g-dev squashfs-tools device-tree-compiler zstd \
-            binutils bison flex gettext p7zip p7zip-full patch pkgconf \
-            autopoint asciidoc xmlto texinfo
-          sudo apt-get autoremove --purge -y
+          sudo apt-get install -y --no-install-recommends \
+            build-essential ccache git gawk gcc-multilib g++-multilib \
+            libelf-dev libncurses5-dev libncursesw5-dev libssl-dev \
+            python3 python3-pip python3-ply python3-pyelftools \
+            rsync unzip wget zlib1g-dev squashfs-tools device-tree-compiler \
+            binutils bison flex
+          # 清理 APT 缓存以节省空间
           sudo apt-get clean
+          # 设置时区
           sudo timedatectl set-timezone "$TZ" || echo "警告：无法设置时区"
+          # 创建工作目录
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
+
+      - name: 缓存 APT 包
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: ${{ runner.os }}-apt-${{ hashFiles('**/IMwrt-24.10-6.6.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
 
       - name: 配置 ccache
         run: |
@@ -273,25 +283,20 @@ jobs:
         id: version
         if: steps.compile.outputs.status == 'success'
         run: |
-           cd openwrt
-
-           # 自动查找 build.version 文件
-           VERSION_FILE=$(find ./bin/targets -type f -name "build.version" | head -n 1)
-
-           if [ -f "$VERSION_FILE" ]; then
-           echo "找到版本文件: $VERSION_FILE"
-           RAW_VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
-           VERSION=$(echo "$RAW_VERSION" | grep -oE "r[0-9]+")
-           VERSION=${VERSION:-unknown}
-           echo "提取的版本号: $VERSION"
-           else
-           echo "未找到 build.version 文件，使用 Git 哈希作为版本号"
+          cd openwrt
+          VERSION_FILE=$(find ./bin/targets -type f -name "build.version" | head -n 1)
+          if [ -f "$VERSION_FILE" ]; then
+            echo "找到版本文件: $VERSION_FILE"
+            RAW_VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+            VERSION=$(echo "$RAW_VERSION" | grep -oE "r[0-9]+")
+            VERSION=${VERSION:-unknown}
+            echo "提取的版本号: $VERSION"
+          else
+            echo "未找到 build.version 文件，使用 Git 哈希作为版本号"
             VERSION=$(git rev-parse --short HEAD || echo "unknown")
-           fi
-
-           echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
-           echo "status=success" >> $GITHUB_OUTPUT
-
+          fi
+          echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
 
       - name: 整理固件并固定文件名
         id: organize
