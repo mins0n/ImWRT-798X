@@ -76,16 +76,13 @@ jobs:
           name: last-checked-sha
         continue-on-error: true
 
-      - name: 安装 GitHub CLI
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y gh
-
       - name: 检查源仓库更新
         id: check
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends gh
           LATEST_SHA=$(gh api repos/padavanonly/immortalwrt-mt798x-24.10/commits/$REPO_BRANCH --jq '.sha' || echo "")
           if [ -z "$LATEST_SHA" ]; then
             echo "错误：无法获取 $REPO_URL 的最新 SHA"
@@ -131,7 +128,7 @@ jobs:
       - name: 检查磁盘空间
         run: |
           MIN_SPACE=10
-          AVAILABLE=$(df --output=avail -B G . | tail -n 1 | tr -d ' ')
+          AVAILABLE=$(df -BG . | awk 'NR==2 {print $4}' | tr -d 'G')
           if [ -z "$AVAILABLE" ] || [ "$AVAILABLE" -lt "$MIN_SPACE" ]; then
             echo "错误：磁盘空间不足，可用空间 ${AVAILABLE}G，需至少 ${MIN_SPACE}G"
             exit 1
@@ -142,6 +139,9 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
+          # 使用阿里云镜像源加速（可替换为其他镜像源，如清华源）
+          sudo sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/' /etc/apt/sources.list
+          sudo sed -i 's/security.ubuntu.com/mirrors.aliyun.com/' /etc/apt/sources.list
           # 设置 APT 缓存
           sudo mkdir -p /var/cache/apt/archives
           sudo chown $USER:$GROUPS /var/cache/apt/archives
@@ -152,7 +152,7 @@ jobs:
             libelf-dev libncurses5-dev libncursesw5-dev libssl-dev \
             python3 python3-pip python3-ply python3-pyelftools \
             rsync unzip wget zlib1g-dev squashfs-tools device-tree-compiler \
-            binutils bison flex
+            binutils bison flex gh
           # 清理 APT 缓存以节省空间
           sudo apt-get clean
           # 设置时区
@@ -175,25 +175,33 @@ jobs:
           echo "export CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
           ccache -M 5G
 
-      - name: 安装 GitHub CLI
-        run: |
-          sudo apt-get install -y gh
+      - name: 缓存 OpenWrt 源码
+        uses: actions/cache@v4
+        with:
+          path: /workdir/openwrt
+          key: ${{ runner.os }}-openwrt-${{ env.REPO_URL }}-${{ env.REPO_BRANCH }}-${{ hashFiles('**/IMwrt-24.10-6.6.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-${{ env.REPO_URL }}-${{ env.REPO_BRANCH }}-
 
-      - name: 克隆源码
+      - name: 克隆或更新源码
         working-directory: /workdir
         run: |
-          if [ -d "/workdir/openwrt" ]; then
-            echo "检测到 openwrt 目录已存在，正在清理..."
-            rm -rf /workdir/openwrt
-          fi
-          for i in {1..5}; do
-            git clone $REPO_URL -b $REPO_BRANCH openwrt && break
-            echo "克隆失败，重试 $i/5"
-            sleep 10
-          done
-          if [ ! -d "/workdir/openwrt" ]; then
-            echo "错误：源码克隆失败"
-            exit 1
+          if [ -d "openwrt" ]; then
+            echo "检测到 openwrt 目录已存在，尝试更新..."
+            cd openwrt
+            git fetch origin $REPO_BRANCH
+            git reset --hard origin/$REPO_BRANCH
+          else
+            echo "克隆源码..."
+            for i in {1..3}; do
+              git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt && break
+              echo "克隆失败，重试 $i/3"
+              sleep 5
+            done
+            if [ ! -d "openwrt" ]; then
+              echo "错误：源码克隆失败"
+              exit 1
+            fi
           fi
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
@@ -209,6 +217,14 @@ jobs:
           fi
           chmod +x $DIY_P1_SH $DIY_P2_SH
 
+      - name: 缓存 Feeds
+        uses: actions/cache@v4
+        with:
+          path: openwrt/feeds
+          key: ${{ runner.os }}-feeds-${{ hashFiles('openwrt/feeds.conf.default') }}
+          restore-keys: |
+            ${{ runner.os }}-feeds-
+
       - name: 加载 Feeds
         timeout-minutes: 10
         run: |
@@ -217,7 +233,7 @@ jobs:
           $GITHUB_WORKSPACE/$DIY_P1_SH
 
       - name: 更新 Feeds
-        timeout-minutes: 30
+        timeout-minutes: 20
         run: |
           cd openwrt
           ./scripts/feeds update -a || { echo "更新 Feeds 失败"; exit 1; }
@@ -233,11 +249,10 @@ jobs:
           make defconfig
 
       - name: 下载软件包
-        timeout-minutes: 30
+        timeout-minutes: 20
         run: |
           cd openwrt
           make download -j8 || { echo "下载软件包失败"; exit 1; }
-          find dl -size -1024c -exec rm -f {} \; || echo "警告：无法清理 dl 目录中的小文件"
 
       - name: 修改 5G 25dB
         if: github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true'
@@ -279,33 +294,26 @@ jobs:
             openwrt/logs/**/*
             openwrt/*.log
 
-- name: 智能提取版本号
-  id: version
-  if: steps.compile.outputs.status == 'success'
-  run: |
-    cd openwrt
-
-    # 自动查找包含版本号的文件（优先 build.version）
-    VERSION_FILE=$(find ./bin/targets -type f -name "build.version" | head -n 1)
-
-    if [ -n "$VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
-      echo "找到版本文件: $VERSION_FILE"
-      RAW_VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
-      VERSION=$(echo "$RAW_VERSION" | grep -oE "r[0-9]+")
-      VERSION=${VERSION:-unknown}
-    else
-      echo "未找到 build.version，尝试从 release tag 提取"
-
-      # 尝试从 GitHub Release Tag 提取（例如 ImmortalWrt-24.10-cmcc_rax3000m-e995c7ba2b）
-      TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-      VERSION=$(echo "$TAG" | grep -oE "r[0-9]+")
-      VERSION=${VERSION:-unknown}
-    fi
-
-    echo "最终提取版本号: $VERSION"
-    echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
-    echo "status=success" >> $GITHUB_OUTPUT
-
+      - name: 智能提取版本号
+        id: version
+        if: steps.compile.outputs.status == 'success'
+        run: |
+          cd openwrt
+          VERSION_FILE=$(find ./bin/targets -type f -name "build.version" | head -n 1)
+          if [ -n "$VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
+            echo "找到版本文件: $VERSION_FILE"
+            RAW_VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+            VERSION=$(echo "$RAW_VERSION" | grep -oE "r[0-9]+")
+            VERSION=${VERSION:-unknown}
+          else
+            echo "未找到 build.version，尝试从 release tag 提取"
+            TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            VERSION=$(echo "$TAG" | grep -oE "r[0-9]+")
+            VERSION=${VERSION:-unknown}
+          fi
+          echo "最终提取版本号: $VERSION"
+          echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
 
       - name: 整理固件并固定文件名
         id: organize
