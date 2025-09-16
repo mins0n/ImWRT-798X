@@ -294,26 +294,46 @@ jobs:
             openwrt/logs/**/*
             openwrt/*.log
 
-      - name: 智能提取版本号
-        id: version
-        if: steps.compile.outputs.status == 'success'
-        run: |
-          cd openwrt
-          VERSION_FILE=$(find ./bin/targets -type f -name "build.version" | head -n 1)
-          if [ -n "$VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
-            echo "找到版本文件: $VERSION_FILE"
-            RAW_VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
-            VERSION=$(echo "$RAW_VERSION" | grep -oE "r[0-9]+")
-            VERSION=${VERSION:-unknown}
-          else
-            echo "未找到 build.version，尝试从 release tag 提取"
-            TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-            VERSION=$(echo "$TAG" | grep -oE "r[0-9]+")
-            VERSION=${VERSION:-unknown}
-          fi
-          echo "最终提取版本号: $VERSION"
-          echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_OUTPUT
+- name: 智能提取版本号（多策略）
+  id: version
+  if: steps.compile.outputs.status == 'success'
+  run: |
+    cd openwrt
+    VERSION="unknown"
+
+    # 尝试从 os-release 提取
+    OS_RELEASE_FILE=$(find ./build_dir -type f -name "os-release" | head -n 1)
+    if [ -n "$OS_RELEASE_FILE" ] && [ -f "$OS_RELEASE_FILE" ]; then
+      echo "找到 os-release 文件: $OS_RELEASE_FILE"
+      RAW_VERSION=$(grep '^VERSION=' "$OS_RELEASE_FILE" | cut -d= -f2 | tr -d '"[:space:]')
+      VERSION=$(echo "$RAW_VERSION" | grep -oE "r[0-9]+")
+    fi
+
+    # 尝试从 build.version 提取
+    if [ -z "$VERSION" ] || [ "$VERSION" = "unknown" ]; then
+      VERSION_FILE=$(find ./bin/targets -type f -name "build.version" | head -n 1)
+      if [ -n "$VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
+        echo "找到 build.version 文件: $VERSION_FILE"
+        RAW_VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+        VERSION=$(echo "$RAW_VERSION" | grep -oE "r[0-9]+")
+      fi
+    fi
+
+    # 尝试从 Git tag 提取
+    if [ -z "$VERSION" ] || [ "$VERSION" = "unknown" ]; then
+      TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+      VERSION=$(echo "$TAG" | grep -oE "r[0-9]+")
+    fi
+
+    # 最终 fallback：保持原始文件名
+    if [ -z "$VERSION" ] || [ "$VERSION" = "unknown" ]; then
+      echo "未能提取版本号，将保持固件原始文件名"
+    else
+      echo "最终提取版本号: $VERSION"
+    fi
+
+    echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
+    echo "status=success" >> $GITHUB_OUTPUT
 
       - name: 整理固件并固定文件名
         id: organize
