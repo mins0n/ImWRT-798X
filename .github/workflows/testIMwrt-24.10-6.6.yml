@@ -1,0 +1,489 @@
+name: testIMwrt-24.10-6.6
+
+on:
+  repository_dispatch:
+    types: [build_firmware]
+  workflow_dispatch:
+    inputs:
+      device_model:
+        description: 'Select target device model'
+        type: choice
+        required: true
+        options:
+          - cmcc_rax3000m
+          - cmcc_rax3000m-emmc
+          - huasifei_wh3000-emmc
+          - abt_asr3000
+          - cetron_ct3003
+          - cmcc_a10
+          - h3c_nx30pro
+          - imou_lc-hx3001
+          - jcg_q30
+          - konka_komi-a31
+          - livinet_zr-3020
+          - mt7981-360-t7-108M
+          - mt7981-clt-r30b1
+          - mt7981-clt-r30b1-112M
+          - xiaomi_mi-router-ax3000t
+          - xiaomi_mi-router-ax3000t-stock
+          - xiaomi_mi-router-wr30u-112m
+          - xiaomi_mi-router-wr30u-stock
+          - abt_asr3000
+          - acelink_ew-7886cax
+          - acer_predator-w6
+          - acer_predator-w6d
+          - acer_vero-w6m
+          - smartrg_sdg-8612
+          - smartrg_sdg-8614
+          - smartrg_sdg-8622
+          - smartrg_sdg-8632
+          - smartrg_sdg-8733
+          - smartrg_sdg-8733a
+          - smartrg_sdg-8734
+          - asus_rt-ax52
+          - asus_rt-ax59u
+          - asus_tuf-ax4200
+          - arcadyan_mozart
+          - asus_tuf-ax6000
+          - bananapi_bpi-r3
+          - bananapi_bpi-r3-mini
+          - tplink_re6000xd
+          - tplink_tl-xdr4288
+          - tplink_tl-xdr6086
+          - tplink_tl-xdr6088
+          - tplink_tl-xtr8488
+          - ubnt_unifi-6-plus
+          - umi_uax3000e
+          - unielec_u7981-01-emmc
+          - unielec_u7981-01-nand
+          - wavlink_wl-wn586x3
+          - wavlink_wl-wn573hx3
+          - xiaomi_mi-router-ax3000t
+          - xiaomi_mi-router-ax3000t-ubootmod
+          - xiaomi_mi-router-wr30u-stock
+          - xiaomi_mi-router-wr30u-ubootmod
+          - xiaomi_redmi-router-ax6000-stock
+          - xiaomi_redmi-router-ax6000-ubootmod
+          - yuncore_ax835
+          - zbtlink_zbt-z8102ax
+          - zbtlink_zbt-z8103ax
+          - zyxel_ex5601-t0-stock
+          - zyxel_ex5601-t0-ubootmod
+          - zyxel_ex5700-telenor
+          - zyxel_nwa50ax-pro
+          - wirelesstag_zx7981pg
+          - wirelesstag_zx7981pd
+          - wirelesstag_zx7981pd-ubootmod
+      enable_5g_25db:
+        description: 'Enable 5G 25dB modification'
+        type: boolean
+        required: true
+        default: true
+      repo_url:
+        description: 'Source repository URL'
+        default: 'https://github.com/padavanonly/immortalwrt-mt798x-24.10'
+      repo_branch:
+        description: 'Source repository branch'
+        default: 'openwrt-24.10-6.6'
+  schedule:
+    - cron: '0 7 * * 5'  # Every Friday at 07:00 UTC (15:00 Beijing time)
+
+permissions:
+  contents: write
+  actions: write
+
+env:
+  REPO_URL: ${{ github.event.inputs.repo_url || 'https://github.com/padavanonly/immortalwrt-mt798x-24.10' }}
+  REPO_BRANCH: ${{ github.event.inputs.repo_branch || 'openwrt-24.10-6.6' }}
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: 24.10-6.6.config
+  DIY_P1_SH: scripts/diy-part1.sh
+  DIY_P2_SH: scripts/diy-part2.sh
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+  WEBDAV_URL: ${{ secrets.WEBDAV_URL }}
+  WEBDAV_USERNAME: ${{ secrets.WEBDAV_USERNAME }}
+  WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
+  ENABLE_5G_25DB: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.enable_5g_25db || secrets.ENABLE_5G_25DB || 'false' }}
+
+jobs:
+  check-source-updates:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download last checked SHA
+        uses: actions/download-artifact@v4
+        with:
+          name: last-checked-sha
+        continue-on-error: true
+
+      - name: Check for source repository updates
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends gh
+          LATEST_SHA=$(gh api repos/padavanonly/immortalwrt-mt798x-24.10/commits/$REPO_BRANCH --jq '.sha' || echo "")
+          if [ -z "$LATEST_SHA" ]; then
+            echo "Error: Unable to fetch latest SHA for $REPO_URL"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          LAST_CHECKED_FILE="last_checked_sha.txt"
+          LAST_CHECKED_SHA=""
+          if [ -f "$LAST_CHECKED_FILE" ]; then
+            LAST_CHECKED_SHA=$(cat "$LAST_CHECKED_FILE")
+          fi
+          if [ "$LATEST_SHA" != "$LAST_CHECKED_SHA" ]; then
+            echo "Detected source repository update: $LATEST_SHA"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "$LATEST_SHA" > "$LAST_CHECKED_FILE"
+          else
+            echo "No source repository updates, skipping build"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload last checked SHA
+        uses: actions/upload-artifact@v4
+        with:
+          name: last-checked-sha
+          path: last_checked_sha.txt
+
+  build:
+    needs: check-source-updates
+    if: github.event_name == 'workflow_dispatch' || needs.check-source-updates.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m", "cmcc_rax3000m-emmc", "huasifei_wh3000-emmc", "abt_asr3000", "cetron_ct3003", "cmcc_a10", "h3c_nx30pro", "imou_lc-hx3001", "jcg_q30", "konka_komi-a31", "livinet_zr-3020", "mt7981-360-t7-108M", "mt7981-clt-r30b1", "mt7981-clt-r30b1-112M", "xiaomi_mi-router-ax3000t", "xiaomi_mi-router-ax3000t-stock", "xiaomi_mi-router-wr30u-112m", "xiaomi_mi-router-wr30u-stock", "abt_asr3000", "acelink_ew-7886cax", "acer_predator-w6", "acer_predator-w6d", "acer_vero-w6m", "smartrg_sdg-8612", "smartrg_sdg-8614", "smartrg_sdg-8622", "smartrg_sdg-8632", "smartrg_sdg-8733", "smartrg_sdg-8733a", "smartrg_sdg-8734", "asus_rt-ax52", "asus_rt-ax59u", "asus_tuf-ax4200", "arcadyan_mozart", "asus_tuf-ax6000", "bananapi_bpi-r3", "bananapi_bpi-r3-mini", "tplink_re6000xd", "tplink_tl-xdr4288", "tplink_tl-xdr6086", "tplink_tl-xdr6088", "tplink_tl-xtr8488", "ubnt_unifi-6-plus", "umi_uax3000e", "unielec_u7981-01-emmc", "unielec_u7981-01-nand", "wavlink_wl-wn586x3", "wavlink_wl-wn573hx3", "xiaomi_mi-router-ax3000t", "xiaomi_mi-router-ax3000t-ubootmod", "xiaomi_mi-router-wr30u-stock", "xiaomi_mi-router-wr30u-ubootmod", "xiaomi_redmi-router-ax6000-stock", "xiaomi_redmi-router-ax6000-ubootmod", "yuncore_ax835", "zbtlink_zbt-z8102ax", "zbtlink_zbt-z8103ax", "zyxel_ex5601-t0-stock", "zyxel_ex5601-t0-ubootmod", "zyxel_ex5700-telenor", "zyxel_nwa50ax-pro", "wirelesstag_zx7981pg", "wirelesstag_zx7981pd", "wirelesstag_zx7981pd-ubootmod"]') }}
+      max-parallel: 18
+    steps:
+      - name: Print debug information
+        run: |
+          echo "Trigger type: ${{ github.event_name }}"
+          echo "Device model: ${{ matrix.device_model }}"
+          echo "5G 25dB: ${{ env.ENABLE_5G_25DB }}"
+          echo "Source repo: ${{ env.REPO_URL }} Branch: ${{ env.REPO_BRANCH }}"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check disk space
+        run: |
+          MIN_SPACE=10
+          AVAILABLE=$(df -BG . | awk 'NR==2 {print $4}' | tr -d 'G')
+          if [ -z "$AVAILABLE" ] || [ "$AVAILABLE" -lt "$MIN_SPACE" ]; then
+            echo "Error: Insufficient disk space, available: ${AVAILABLE}G, required: ${MIN_SPACE}G"
+            exit 1
+          fi
+          echo "Available disk space: ${AVAILABLE}G"
+
+      - name: Initialize environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          # Use Aliyun mirror for faster downloads
+          sudo sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/' /etc/apt/sources.list
+          sudo sed -i 's/security.ubuntu.com/mirrors.aliyun.com/' /etc/apt/sources.list
+          # Set up APT cache
+          sudo mkdir -p /var/cache/apt/archives
+          sudo chown $USER:$GROUPS /var/cache/apt/archives
+          # Install required packages
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            build-essential ccache git gawk gcc-multilib g++-multilib \
+            libelf-dev libncurses5-dev libncursesw5-dev libssl-dev \
+            python3 python3-pip python3-ply python3-pyelftools \
+            rsync unzip wget zlib1g-dev squashfs-tools device-tree-compiler \
+            binutils bison flex gh
+          # Clean APT cache to save space
+          sudo apt-get clean
+          # Set timezone
+          sudo timedatectl set-timezone "$TZ" || echo "Warning: Unable to set timezone"
+          # Create working directory
+          sudo mkdir -p /workdir
+          sudo chown $USER:$GROUPS /workdir
+
+      - name: Cache APT packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: ${{ runner.os }}-apt-${{ env.REPO_URL }}-${{ env.REPO_BRANCH }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
+
+      - name: Configure ccache
+        run: |
+          echo "export PATH=/usr/lib/ccache:$PATH" >> $GITHUB_ENV
+          echo "export CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+          ccache -M 5G
+
+      - name: Cache OpenWrt source
+        uses: actions/cache@v4
+        with:
+          path: /workdir/openwrt
+          key: ${{ runner.os }}-openwrt-${{ env.REPO_URL }}-${{ env.REPO_BRANCH }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-
+
+      - name: Clone or update source
+        working-directory: /workdir
+        run: |
+          if [ -d "openwrt" ]; then
+            echo "Detected existing openwrt directory, updating..."
+            cd openwrt
+            git fetch origin $REPO_BRANCH
+            git reset --hard origin/$REPO_BRANCH
+          else
+            echo "Cloning source..."
+            for i in {1..3}; do
+              git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt && break
+              echo "Clone failed, retry $i/3"
+              sleep 5
+            done
+            if [ ! -d "openwrt" ]; then
+              echo "Error: Source clone failed"
+              exit 1
+            fi
+          fi
+          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+
+      - name: Verify script files
+        run: |
+          if [ ! -f "$DIY_P1_SH" ]; then
+            echo "Error: $DIY_P1_SH not found"
+            exit 1
+          fi
+          if [ ! -f "$DIY_P2_SH" ]; then
+            echo "Error: $DIY_P2_SH not found"
+            exit 1
+          fi
+          chmod +x $DIY_P1_SH $DIY_P2_SH
+
+      - name: Cache Feeds
+        uses: actions/cache@v4
+        with:
+          path: openwrt/feeds
+          key: ${{ runner.os }}-feeds-${{ hashFiles('openwrt/feeds.conf.default') }}
+          restore-keys: |
+            ${{ runner.os }}-feeds-
+
+      - name: Load Feeds
+        timeout-minutes: 10
+        run: |
+          [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P1_SH
+
+      - name: Update Feeds
+        timeout-minutes: 20
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a || { echo "Failed to update Feeds"; exit 1; }
+          ./scripts/feeds install -a || { echo "Failed to install Feeds"; exit 1; }
+
+      - name: Load configuration
+        run: |
+          [ -e files ] && mv files openwrt/files
+          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_${{ matrix.device_model }}=y" >> openwrt/.config
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P2_SH
+          make defconfig
+
+      - name: Download packages
+        timeout-minutes: 20
+        run: |
+          cd openwrt
+          make download -j8 || { echo "Failed to download packages"; exit 1; }
+
+      - name: Modify 5G 25dB
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true'
+        working-directory: ./openwrt
+        run: |
+          EEPROM_FILE=package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin
+          EXPECTED_CONTENT=$(printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B')
+          if [ ! -f "$EEPROM_FILE" ]; then
+            echo "EEPROM file not found, creating new file"
+            mkdir -p "$(dirname "$EEPROM_FILE")"
+            touch "$EEPROM_FILE"
+            chmod 644 "$EEPROM_FILE"
+          fi
+          if [ ! -w "$EEPROM_FILE" ]; then
+            echo "Error: EEPROM file is not writable"
+            exit 1
+          fi
+          CURRENT_CONTENT=$(dd if="$EEPROM_FILE" bs=1 skip=$((0x445)) count=20 2>/dev/null || echo "")
+          if [ "$CURRENT_CONTENT" != "$EXPECTED_CONTENT" ]; then
+            printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B' | dd of="$EEPROM_FILE" bs=1 seek=$((0x445)) conv=notrunc
+            echo "EEPROM file updated"
+          else
+            echo "EEPROM file does not need modification"
+          fi
+
+      - name: Compile firmware
+        id: compile
+        timeout-minutes: 180
+        run: |
+          set -e
+          cd openwrt
+          make -j$(nproc) V=s || make -j4 V=s || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "DEVICE_NAME=_${{ matrix.device_model }}" >> $GITHUB_ENV
+          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+
+      - name: Upload compile logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-log-${{ matrix.device_model }}
+          path: |
+            openwrt/build_dir/**/*
+            openwrt/logs/**/*
+            openwrt/*.log
+
+      - name: Smart extract version number
+        id: version
+        if: steps.compile.outputs.status == 'success'
+        run: |
+          cd openwrt
+          VERSION="unknown"
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+
+          # Try extracting from os-release
+          OS_RELEASE_FILE=$(find ./build_dir -type f -name "os-release" | head -n 1)
+          if [ -n "$OS_RELEASE_FILE" ] && [ -f "$OS_RELEASE_FILE" ]; then
+            echo "Found os-release file: $OS_RELEASE_FILE"
+            RAW_VERSION=$(grep '^VERSION=' "$OS_RELEASE_FILE" | cut -d= -f2 | tr -d '"[:space:]')
+            VERSION=$(echo "$RAW_VERSION" | grep -oE "r[0-9]+" || echo "")
+          fi
+
+          # Try extracting from build.version
+          if [ -z "$VERSION" ] || [ "$VERSION" = "unknown" ]; then
+            VERSION_FILE=$(find ./bin/targets -type f -name "build.version" | head -n 1)
+            if [ -n "$VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
+              echo "Found build.version file: $VERSION_FILE"
+              RAW_VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+              VERSION=$(echo "$RAW_VERSION" | grep -oE "r[0-9]+" || echo "")
+            fi
+          fi
+
+          # Try extracting from Git tag
+          if [ -z "$VERSION" ] || [ "$VERSION" = "unknown" ]; then
+            TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            VERSION=$(echo "$TAG" | grep -oE "r[0-9]+" || echo "")
+          fi
+
+          # Fallback to commit SHA
+          if [ -z "$VERSION" ] || [ "$VERSION" = "unknown" ]; then
+            echo "Failed to extract version number, using commit SHA"
+            VERSION="commit-$COMMIT_SHA"
+          else
+            echo "Extracted version number: $VERSION"
+          fi
+
+          echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: Organize firmware and fix filenames
+        id: organize
+        if: env.UPLOAD_FIRMWARE == 'true' && steps.compile.outputs.status == 'success'
+        run: |
+          set -e
+          cd openwrt/bin/targets/*/*
+          rm -rf packages
+          for file in *sysupgrade* *factory*; do
+            if [ -f "$file" ] && ! echo "$file" | grep -q "-bl2"; then
+              TYPE=$(echo "$file" | grep -o "sysupgrade\|factory")
+              EXT="${file##*.}"
+              NEW_NAME="${{ matrix.device_model }}_25dB-${{ env.ENABLE_5G_25DB == 'true' && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}_${{ env.FILE_DATE }}_${TYPE}.${EXT}"
+              mv "$file" "$NEW_NAME"
+            fi
+          done
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: Generate tag and release description
+        id: tag
+        if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success'
+        run: |
+          set -e
+          echo "RELEASE_TAG=ImmortalWrt-24.10-${{ matrix.device_model }}-${{ env.FIRMWARE_VERSION }}" >> $GITHUB_OUTPUT
+          cat << EOF > release.txt
+          **Firmware Version**: ImmortalWrt ${{ env.FIRMWARE_VERSION }}
+          **Device**: ${{ matrix.device_model }}
+          **Build Time**: $(date +"%Y-%m-%d %H:%M %Z")
+          **High Power Mode**: ${{ env.ENABLE_5G_25DB == 'true' && 'Enabled' || 'Disabled' }}
+          EOF
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: Publish firmware
+        uses: softprops/action-gh-release@v2
+        if: steps.tag.outputs.status == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.tag.outputs.RELEASE_TAG }}
+          body_path: release.txt
+          files: |
+            ${{ env.FIRMWARE }}/*sysupgrade*.*
+            ${{ env.FIRMWARE }}/*factory*.*
+          overwrite: true
+
+      - name: Validate WebDAV environment variables
+        if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
+        run: |
+          if [ -z "${{ env.WEBDAV_URL }}" ] || [ -z "${{ env.WEBDAV_USERNAME }}" ] || [ -z "${{ env.WEBDAV_PASSWORD }}" ]; then
+            echo "Error: WebDAV environment variables not properly configured"
+            exit 1
+          fi
+          echo "WebDAV environment variables validated"
+
+      - name: Upload to WebDAV
+        if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
+        env:
+          FILE_DATE: $(date +%Y%m%d)
+        run: |
+          set -e
+          echo "Searching for firmware files..."
+          FIRMWARE_FILES=$(find openwrt/bin/targets -type f \( -name "*sysupgrade*.*" -o -name "*factory*.*" \) ! -name "*-bl2*")
+          if [ -z "$FIRMWARE_FILES" ]; then
+            echo "No firmware files found, skipping upload"
+            exit 0
+          fi
+          echo "Found files: $FIRMWARE_FILES"
+          for FILE in $FIRMWARE_FILES; do
+            NEW_NAME="${{ matrix.device_model }}_$(basename "$FILE" | sed "s/\.\([^.]*\)$/-${{ env.FILE_DATE }}.\1/")"
+            echo "Calculating checksum for $FILE"
+            SHA256=$(sha256sum "$FILE" | cut -d' ' -f1)
+            echo "Uploading: $FILE → $NEW_NAME"
+            RESPONSE=$(curl --retry 3 --retry-delay 5 -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
+                   -T "$FILE" \
+                   "${{ env.WEBDAV_URL }}/$NEW_NAME" -w "%{http_code}" -o /dev/null)
+            if [ "$RESPONSE" -ne 201 ] && [ "$RESPONSE" -ne 204 ] && [ "$RESPONSE" -ne 200 ]; then
+              echo "Upload failed: $NEW_NAME (HTTP status: $RESPONSE)"
+              exit 1
+            fi
+            echo "Uploaded successfully: $NEW_NAME (SHA256: $SHA256)"
+          done
+          echo "Upload completed!"
+
+      - name: Clean up old releases
+        if: steps.tag.outputs.status == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release list --repo ${{ github.repository }} --limit 20 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10-${{ matrix.device_model }}")) | .name' | tail -n +5 | xargs -I {} gh release delete {} --yes || echo "Warning: Failed to delete release {}"
+
+      - name: Clean up old workflow runs
+        if: steps.tag.outputs.status == 'success'
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          retain_days: 7
+          keep_minimum_runs: 3
