@@ -1,4 +1,4 @@
-```yaml
+
 name: 清理旧发布和标签
 
 on:
@@ -198,4 +198,3 @@ jobs:
           gh release list --repo ${{ github.repository }} --limit "$RETAIN_COUNT" --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' || echo "无保留的 Releases"
           echo "保留的 Tags："
           gh api repos/${{ github.repository }}/tags --jq '.[] | select(.name | test("(?i)immortalwrt-24.10")) | .name' || echo "无保留的 Tags"
-```
