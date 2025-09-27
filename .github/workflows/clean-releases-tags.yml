@@ -1,4 +1,4 @@
-
+#```yaml
 name: 清理旧发布和标签
 
 on:
@@ -29,13 +29,19 @@ jobs:
 
       - name: 安装 GitHub CLI 和 jq
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends gh jq
+          echo "更新 apt-get 源..."
+          sudo apt-get update -y || { echo "警告：apt-get 更新失败，尝试备用方法"; }
+          echo "安装 GitHub CLI 和 jq..."
+          sudo apt-get install -y --no-install-recommends gh jq || {
+            echo "错误：apt-get 安装失败，尝试备用安装..."
+            sudo snap install gh --classic
+            sudo snap install jq --classic
+          }
           echo "GitHub CLI 和 jq 安装完成"
           # 验证 jq 安装
           if ! jq --version >/dev/null 2>&1; then
-            echo "错误：jq 安装失败，尝试备用安装"
-            sudo snap install jq --classic || { echo "错误：备用安装 jq 失败"; exit 1; }
+            echo "错误：jq 验证失败，安装可能未成功"
+            exit 1
           fi
           echo "jq 版本：$(jq --version)"
 
@@ -202,3 +208,4 @@ jobs:
           gh release list --repo ${{ github.repository }} --limit "$RETAIN_COUNT" --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' || echo "无保留的 Releases"
           echo "保留的 Tags："
           gh api repos/${{ github.repository }}/tags --jq '.[] | select(.name | test("(?i)immortalwrt-24.10")) | .name' || echo "无保留的 Tags"
+#```
