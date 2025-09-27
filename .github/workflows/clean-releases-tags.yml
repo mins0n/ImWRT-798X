@@ -1,0 +1,104 @@
+name: 清理旧发布和标签
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_cleanup:
+        description: '确认执行清理操作'
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  clean-releases-tags:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm_cleanup == 'true'
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 GitHub CLI
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends gh
+          echo "GitHub CLI 安装完成"
+
+      - name: 清理旧 Releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          echo "正在列出所有包含 ImmortalWrt-24.10 的 Releases..."
+          RELEASES=$(gh release list --repo ${{ github.repository }} --limit 50 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' | sort -r)
+          if [ -z "$RELEASES" ]; then
+            echo "未找到包含 ImmortalWrt-24.10 的 Releases，跳过清理"
+            exit 0
+          fi
+          echo "找到的 Releases："
+          echo "$RELEASES"
+          
+          # 保留最近 4 个 Releases，标记其余为待删除
+          TO_DELETE=$(echo "$RELEASES" | tail -n +5)
+          if [ -z "$TO_DELETE" ]; then
+            echo "无需删除 Releases（少于或等于 4 个）"
+          else
+            echo "待删除的 Releases："
+            echo "$TO_DELETE"
+            for RELEASE in $TO_DELETE; do
+              echo "删除 Release：$RELEASE"
+              gh release delete "$RELEASE" --repo ${{ github.repository }} --yes || echo "警告：无法删除 Release $RELEASE"
+            done
+          fi
+
+      - name: 清理旧 Tags
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          echo "正在列出所有包含 ImmortalWrt-24.10 的 Tags..."
+          TAGS=$(gh api repos/${{ github.repository }}/tags --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' | sort -r)
+          if [ -z "$TAGS" ]; then
+            echo "未找到包含 ImmortalWrt-24.10 的 Tags，跳过清理"
+            exit 0
+          fi
+          echo "找到的 Tags："
+          echo "$TAGS"
+          
+          # 获取当前保留的 Releases 对应的 Tags
+          RETAINED_RELEASES=$(gh release list --repo ${{ github.repository }} --limit 4 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' | sort -r)
+          RETAINED_TAGS=""
+          for RELEASE in $RETAINED_RELEASES; do
+            RETAINED_TAGS="$RETAINED_TAGS $RELEASE"
+          done
+          
+          # 清理不属于保留 Releases 的 Tags
+          TO_DELETE_TAGS=""
+          for TAG in $TAGS; do
+            if ! echo "$RETAINED_TAGS" | grep -q "$TAG"; then
+              TO_DELETE_TAGS="$TO_DELETE_TAGS $TAG"
+            fi
+          done
+          
+          if [ -z "$TO_DELETE_TAGS" ]; then
+            echo "无需删除 Tags（所有 Tags 均对应保留的 Releases）"
+          else
+            echo "待删除的 Tags："
+            echo "$TO_DELETE_TAGS"
+            for TAG in $TO_DELETE_TAGS; do
+              echo "删除 Tag：$TAG"
+              gh api -X DELETE repos/${{ github.repository }}/git/refs/tags/$TAG || echo "警告：无法删除 Tag $TAG"
+            done
+          fi
+          echo "Tags 清理完成"
+
+      - name: 输出清理结果
+        run: |
+          echo "清理操作完成！"
+          echo "保留的 Releases："
+          gh release list --repo ${{ github.repository }} --limit 4 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' || echo "无保留的 Releases"
+          echo "保留的 Tags："
+          gh api repos/${{ github.repository }}/tags --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' || echo "无保留的 Tags"
