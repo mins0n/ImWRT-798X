@@ -1,3 +1,4 @@
+```yaml
 name: 清理旧发布和标签
 
 on:
@@ -60,7 +61,7 @@ jobs:
             echo "未找到包含 ImmortalWrt-24.10 的 Releases，跳过清理"
             exit 0
           fi
-          echo "找到的 Releases（总数：$(echo "$RELEASES" | wc -l)）："
+          echo "找到的 Releases："
           echo "$RELEASES"
           
           # 根据 retain_count 保留指定数量的 Releases
@@ -73,7 +74,7 @@ jobs:
           if [ -z "$TO_DELETE" ]; then
             echo "无需删除 Releases（保留数量：$RETAIN_COUNT）"
           else
-            echo "待删除的 Releases（总数：$(echo "$TO_DELETE" | wc -l)）："
+            echo "待删除的 Releases："
             echo "$TO_DELETE"
             for RELEASE in $TO_DELETE; do
               echo "删除 Release：$RELEASE"
@@ -84,6 +85,7 @@ jobs:
       - name: 清理旧 Tags
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: /usr/bin/bash -e {0}
         run: |
           set -e
           RETAIN_COUNT=${{ steps.validate.outputs.retain_count }}
@@ -104,7 +106,7 @@ jobs:
             echo "未找到包含 ImmortalWrt-24.10 的 Tags，跳过清理"
             exit 0
           fi
-          echo "找到的 Tags（总数：$(echo "$TAGS" | wc -l)）："
+          echo "找到的 Tags："
           echo "$TAGS"
           
           # 获取保留的 Releases 对应的 Tags
@@ -130,7 +132,7 @@ jobs:
           if [ ${#TO_DELETE_TAGS[@]} -eq 0 ]; then
             echo "无需删除 Tags（所有 Tags 均对应保留的 Releases）"
           else
-            echo "待删除的 Tags（总数：${#TO_DELETE_TAGS[@]}）："
+            echo "待删除的 Tags："
             printf '%s\n' "${TO_DELETE_TAGS[@]}"
             for TAG in "${TO_DELETE_TAGS[@]}"; do
               echo "删除 Tag：$TAG"
@@ -196,3 +198,4 @@ jobs:
           gh release list --repo ${{ github.repository }} --limit "$RETAIN_COUNT" --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' || echo "无保留的 Releases"
           echo "保留的 Tags："
           gh api repos/${{ github.repository }}/tags --jq '.[] | select(.name | test("(?i)immortalwrt-24.10")) | .name' || echo "无保留的 Tags"
+```
