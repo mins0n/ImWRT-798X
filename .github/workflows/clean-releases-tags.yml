@@ -33,7 +33,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends gh jq
           echo "GitHub CLI 和 jq 安装完成"
           # 验证 jq 安装
-          jq --version || { echo "错误：jq 安装失败"; exit 1; }
+          if ! jq --version >/dev/null 2>&1; then
+            echo "错误：jq 安装失败，尝试备用安装"
+            sudo snap install jq --classic || { echo "错误：备用安装 jq 失败"; exit 1; }
+          fi
+          echo "jq 版本：$(jq --version)"
 
       - name: 验证保留数量
         id: validate
