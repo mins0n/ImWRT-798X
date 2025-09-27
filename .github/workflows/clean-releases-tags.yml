@@ -26,11 +26,13 @@ jobs:
       - name: 检出仓库
         uses: actions/checkout@v4
 
-      - name: 安装 GitHub CLI
+      - name: 安装 GitHub CLI 和 jq
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends gh
-          echo "GitHub CLI 安装完成"
+          sudo apt-get install -y --no-install-recommends gh jq
+          echo "GitHub CLI 和 jq 安装完成"
+          # 验证 jq 安装
+          jq --version || { echo "错误：jq 安装失败"; exit 1; }
 
       - name: 验证保留数量
         id: validate
