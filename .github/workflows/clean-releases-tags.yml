@@ -8,6 +8,11 @@ on:
         type: boolean
         required: true
         default: false
+      retain_count:
+        description: '保留的 Release 和 Tag 数量（默认 0）'
+        type: string
+        required: false
+        default: '0'
 
 permissions:
   contents: write
@@ -27,11 +32,26 @@ jobs:
           sudo apt-get install -y --no-install-recommends gh
           echo "GitHub CLI 安装完成"
 
+      - name: 验证保留数量
+        id: validate
+        run: |
+          RETAIN_COUNT="${{ github.event.inputs.retain_count }}"
+          if [[ ! "$RETAIN_COUNT" =~ ^[0-9]+$ ]]; then
+            echo "错误：保留数量 '$RETAIN_COUNT' 无效，使用默认值 0"
+            RETAIN_COUNT=0
+          elif [ "$RETAIN_COUNT" -lt 0 ]; then
+            echo "错误：保留数量不能为负数，使用默认值 0"
+            RETAIN_COUNT=0
+          fi
+          echo "retain_count=$RETAIN_COUNT" >> $GITHUB_OUTPUT
+          echo "验证完成，保留数量：$RETAIN_COUNT"
+
       - name: 清理旧 Releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
+          RETAIN_COUNT=${{ steps.validate.outputs.retain_count }}
           echo "正在列出所有包含 ImmortalWrt-24.10 的 Releases..."
           RELEASES=$(gh release list --repo ${{ github.repository }} --limit 50 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' | sort -r)
           if [ -z "$RELEASES" ]; then
@@ -41,10 +61,15 @@ jobs:
           echo "找到的 Releases："
           echo "$RELEASES"
           
-          # 保留最近 4 个 Releases，标记其余为待删除
-          TO_DELETE=$(echo "$RELEASES" | tail -n +5)
+          # 根据 retain_count 保留指定数量的 Releases
+          if [ "$RETAIN_COUNT" -eq 0 ]; then
+            TO_DELETE="$RELEASES"
+          else
+            TO_DELETE=$(echo "$RELEASES" | tail -n +$((RETAIN_COUNT + 1)))
+          fi
+          
           if [ -z "$TO_DELETE" ]; then
-            echo "无需删除 Releases（少于或等于 4 个）"
+            echo "无需删除 Releases（保留数量：$RETAIN_COUNT）"
           else
             echo "待删除的 Releases："
             echo "$TO_DELETE"
@@ -59,6 +84,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
+          RETAIN_COUNT=${{ steps.validate.outputs.retain_count }}
           echo "正在列出所有包含 ImmortalWrt-24.10 的 Tags..."
           TAGS=$(gh api repos/${{ github.repository }}/tags --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' | sort -r)
           if [ -z "$TAGS" ]; then
@@ -68,8 +94,8 @@ jobs:
           echo "找到的 Tags："
           echo "$TAGS"
           
-          # 获取当前保留的 Releases 对应的 Tags
-          RETAINED_RELEASES=$(gh release list --repo ${{ github.repository }} --limit 4 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' | sort -r)
+          # 获取保留的 Releases 对应的 Tags
+          RETAINED_RELEASES=$(gh release list --repo ${{ github.repository }} --limit "$RETAIN_COUNT" --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' | sort -r)
           RETAINED_TAGS=""
           for RELEASE in $RETAINED_RELEASES; do
             RETAINED_TAGS="$RETAINED_TAGS $RELEASE"
@@ -97,8 +123,9 @@ jobs:
 
       - name: 输出清理结果
         run: |
+          RETAIN_COUNT=${{ steps.validate.outputs.retain_count }}
           echo "清理操作完成！"
-          echo "保留的 Releases："
-          gh release list --repo ${{ github.repository }} --limit 4 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' || echo "无保留的 Releases"
+          echo "保留的 Releases（最多 $RETAIN_COUNT 个）："
+          gh release list --repo ${{ github.repository }} --limit "$RETAIN_COUNT" --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' || echo "无保留的 Releases"
           echo "保留的 Tags："
           gh api repos/${{ github.repository }}/tags --jq '.[] | select(.name | test("ImmortalWrt-24.10")) | .name' || echo "无保留的 Tags"
