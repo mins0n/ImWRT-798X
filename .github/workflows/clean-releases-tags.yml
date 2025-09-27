@@ -120,20 +120,23 @@ jobs:
           echo "保留的 Releases 对应的 Tags："
           echo "$RETAINED_TAGS"
           
-          # 清理不属于保留 Releases 的 Tags
-          TO_DELETE_TAGS=""
+          # 使用数组构建待删除 Tags 列表，避免重复和首部空格
+          declare -a TO_DELETE_TAGS
           for TAG in $TAGS; do
             if ! echo "$RETAINED_TAGS" | grep -q "$TAG"; then
-              TO_DELETE_TAGS="$TO_DELETE_TAGS $TAG"
+              if [[ ! " ${TO_DELETE_TAGS[*]} " =~ " $TAG " ]]; then
+                TO_DELETE_TAGS+=("$TAG")
+                echo "添加待删除 Tag：$TAG"
+              fi
             fi
           done
           
-          if [ -z "$TO_DELETE_TAGS" ]; then
+          if [ ${#TO_DELETE_TAGS[@]} -eq 0 ]; then
             echo "无需删除 Tags（所有 Tags 均对应保留的 Releases）"
           else
-            echo "待删除的 Tags（总数：$(echo "$TO_DELETE_TAGS" | wc -l)）："
-            echo "$TO_DELETE_TAGS"
-            for TAG in $TO_DELETE_TAGS; do
+            echo "待删除的 Tags（总数：${#TO_DELETE_TAGS[@]}）："
+            printf '%s\n' "${TO_DELETE_TAGS[@]}"
+            for TAG in "${TO_DELETE_TAGS[@]}"; do
               echo "删除 Tag：$TAG"
               for attempt in {1..5}; do
                 gh api -X DELETE -H "Accept: application/vnd.github+json" repos/${{ github.repository }}/git/refs/tags/$TAG && break
