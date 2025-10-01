@@ -5,7 +5,7 @@ on:
     types: [build_firmware]
   workflow_dispatch:
     inputs:
-      device_model:
+      device_models:
         description: '选择目标设备型号（多个型号用逗号分隔，例如: cmcc_rax3000m,cmcc_rax3000m-emmc）'
         type: string
         required: true
@@ -93,15 +93,43 @@ jobs:
           name: last-checked-sha
           path: last_checked_sha.txt
 
+  prepare-devices:
+    runs-on: ubuntu-latest
+    outputs:
+      device-list: ${{ steps.parse.outputs.devices }}
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
+    steps:
+      - id: parse
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            DEVICES="${{ github.event.inputs.device_models }}"
+            if [ -z "$DEVICES" ]; then
+              DEVICES="cmcc_rax3000m"
+            fi
+            # 清理空格并替换逗号为JSON格式
+            CLEANED=$(echo "$DEVICES" | tr -d ' ' | sed 's/,/","/g')
+            echo "devices=[\"$CLEANED\"]" >> $GITHUB_OUTPUT
+          else
+            echo 'devices=["cmcc_rax3000m", "cmcc_rax3000m-emmc"]' >> $GITHUB_OUTPUT
+          fi
+
   build:
-    needs: check-source-updates
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && needs.check-source-updates.outputs.should_build == 'true') || github.event_name == 'repository_dispatch'
+    needs: [check-source-updates, prepare-devices]
+    if: (github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch') || (github.event_name == 'schedule' && needs.check-source-updates.outputs.should_build == 'true')
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["%s"]', replace(github.event.inputs.device_model, ',', '","'))) || fromJSON('["cmcc_rax3000m", "cmcc_rax3000m-emmc"]') }}
+        device_model: ${{ fromJson(needs.prepare-devices.outputs.device-list) }}
       max-parallel: 18
     steps:
+      - name: 设置5G 25dB标志
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.enable_5g_25db }}" == "false" ]]; then
+            echo "HAS_25DB=false" >> $GITHUB_ENV
+          else
+            echo "HAS_25DB=true" >> $GITHUB_ENV
+          fi
+
       - name: 打印调试信息
         run: |
           echo "触发类型：${{ github.event_name }}"
@@ -240,15 +268,6 @@ jobs:
         run: |
           cd openwrt
           make download -j8 || { echo "下载软件包失败"; exit 1; }
-
-      - name: 设置5G 25dB标志
-        id: flag
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.enable_5g_25db }}" == "false" ]]; then
-            echo "HAS_25DB=false" >> $GITHUB_ENV
-          else
-            echo "HAS_25DB=true" >> $GITHUB_ENV
-          fi
 
       - name: 修改5G 25dB
         if: env.HAS_25DB == 'true'
@@ -497,14 +516,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           CURRENT_TAG="${{ steps.tag.outputs.RELEASE_TAG }}"
-          REPO_PATH=$(echo ${{ env.REPO_URL }} | sed 's|https://github.com/||' | sed 's|.git$||')
-          OWNER=$(echo $REPO_PATH | cut -d/ -f1)
-          REPO_NAME=$(echo $REPO_PATH | cut -d/ -f2)
-          releases=$(gh release list --repo $OWNER/$REPO_NAME --limit 50 --json tagName --jq ".[] | select(.tagName | startswith(\"ImmortalWrt-24.10-${{ matrix.device_model }}-\") ) | .tagName")
+          releases=$(gh release list --repo ${{ github.repository }} --limit 50 --json tagName --jq ".[] | select(.tagName | startswith(\"ImmortalWrt-24.10-${{ matrix.device_model }}-\") and .tagName != \"$CURRENT_TAG\" ) | .tagName")
           for tag in $releases; do
-            if [[ "$tag" != "$CURRENT_TAG" ]]; then
-              gh release delete "$tag" --yes || echo "警告：无法删除发布 $tag"
-            fi
+            gh release delete "$tag" --yes || echo "警告：无法删除发布 $tag"
           done
 
       - name: 清理旧工作流运行
