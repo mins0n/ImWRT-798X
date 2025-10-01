@@ -5,11 +5,29 @@ on:
     types: [build_firmware]
   workflow_dispatch:
     inputs:
-      device_models:
-        description: '选择目标设备型号（多个型号用逗号分隔，例如: cmcc_rax3000m,cmcc_rax3000m-emmc）'
-        type: string
+      device_model:
+        description: '选择目标设备型号'
+        type: choice
         required: true
-        default: 'cmcc_rax3000m'
+        options:
+          - cmcc_rax3000m
+          - cmcc_rax3000m-emmc
+          - huasifei_wh3000-emmc
+          - abt_asr3000
+          - cetron_ct3003
+          - cmcc_a10
+          - h3c_nx30pro
+          - imou_lc-hx3001
+          - jcg_q30
+          - konka_komi-a31
+          - livinet_zr-3020
+          - mt7981-360-t7-108M
+          - mt7981-clt-r30b1
+          - mt7981-clt-r30b1-112M
+          - xiaomi_mi-router-ax3000t
+          - xiaomi_mi-router-ax3000t-stock
+          - xiaomi_mi-router-wr30u-112m
+          - xiaomi_mi-router-wr30u-stock
       enable_5g_25db:
         description: '启用5G 25dB修改'
         type: boolean
@@ -41,6 +59,7 @@ env:
   WEBDAV_URL: ${{ secrets.WEBDAV_URL }}
   WEBDAV_USERNAME: ${{ secrets.WEBDAV_USERNAME }}
   WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
+  ENABLE_5G_25DB: true
 
 jobs:
   check-source-updates:
@@ -64,12 +83,9 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends gh
-          REPO_PATH=$(echo ${{ env.REPO_URL }} | sed 's|https://github.com/||' | sed 's|.git$||')
-          OWNER=$(echo $REPO_PATH | cut -d/ -f1)
-          REPO_NAME=$(echo $REPO_PATH | cut -d/ -f2)
-          LATEST_SHA=$(gh api "repos/$OWNER/$REPO_NAME/commits/${{ env.REPO_BRANCH }}" --jq '.sha' || echo "")
+          LATEST_SHA=$(gh api repos/padavanonly/immortalwrt-mt798x-24.10/commits/$REPO_BRANCH --jq '.sha' || echo "")
           if [ -z "$LATEST_SHA" ]; then
-            echo "错误：无法获取 ${{ env.REPO_URL }} 的最新SHA"
+            echo "错误：无法获取 $REPO_URL 的最新SHA"
             echo "should_build=false" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -93,48 +109,20 @@ jobs:
           name: last-checked-sha
           path: last_checked_sha.txt
 
-  prepare-devices:
-    runs-on: ubuntu-latest
-    outputs:
-      device-list: ${{ steps.parse.outputs.devices }}
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
-    steps:
-      - id: parse
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            DEVICES="${{ github.event.inputs.device_models }}"
-            if [ -z "$DEVICES" ]; then
-              DEVICES="cmcc_rax3000m"
-            fi
-            # 清理空格并替换逗号为JSON格式
-            CLEANED=$(echo "$DEVICES" | tr -d ' ' | sed 's/,/","/g')
-            echo "devices=[\"$CLEANED\"]" >> $GITHUB_OUTPUT
-          else
-            echo 'devices=["cmcc_rax3000m", "cmcc_rax3000m-emmc"]' >> $GITHUB_OUTPUT
-          fi
-
   build:
-    needs: [check-source-updates, prepare-devices]
-    if: (github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch') || (github.event_name == 'schedule' && needs.check-source-updates.outputs.should_build == 'true')
+    needs: check-source-updates
+    if: github.event_name == 'workflow_dispatch' || needs.check-source-updates.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        device_model: ${{ fromJson(needs.prepare-devices.outputs.device-list) }}
+        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m", "cmcc_rax3000m-emmc"]') }}
       max-parallel: 18
     steps:
-      - name: 设置5G 25dB标志
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.enable_5g_25db }}" == "false" ]]; then
-            echo "HAS_25DB=false" >> $GITHUB_ENV
-          else
-            echo "HAS_25DB=true" >> $GITHUB_ENV
-          fi
-
       - name: 打印调试信息
         run: |
           echo "触发类型：${{ github.event_name }}"
           echo "设备型号：${{ matrix.device_model }}"
-          echo "5G 25dB：${{ env.HAS_25DB }}"
+          echo "5G 25dB：${{ env.ENABLE_5G_25DB }}"
           echo "源代码仓库：${{ env.REPO_URL }} 分支：${{ env.REPO_BRANCH }}"
 
       - name: 检出仓库
@@ -159,7 +147,7 @@ jobs:
           sudo sed -i 's/security.ubuntu.com/mirrors.aliyun.com/' /etc/apt/sources.list
           # 设置APT缓存
           sudo mkdir -p /var/cache/apt/archives
-          sudo chown $(whoami):$(id -gn) /var/cache/apt/archives
+          sudo chown $USER:$GROUPS /var/cache/apt/archives
           # 安装所需软件包
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
@@ -174,7 +162,7 @@ jobs:
           sudo timedatectl set-timezone "$TZ" || echo "警告：无法设置时区"
           # 创建工作目录
           sudo mkdir -p /workdir
-          sudo chown $(whoami):$(id -gn) /workdir
+          sudo chown $USER:$GROUPS /workdir
 
       - name: 缓存APT软件包
         uses: actions/cache@v4
@@ -270,7 +258,6 @@ jobs:
           make download -j8 || { echo "下载软件包失败"; exit 1; }
 
       - name: 修改5G 25dB
-        if: env.HAS_25DB == 'true'
         working-directory: ./openwrt
         run: |
           EEPROM_FILE=package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin
@@ -363,12 +350,11 @@ jobs:
           set -e
           cd openwrt/bin/targets/*/*
           rm -rf packages
-          POWER_MODE="${{ env.HAS_25DB == 'true' && '25dB-on' || '25dB-off' }}"
           for file in *sysupgrade* *factory*; do
             if [ -f "$file" ] && ! echo "$file" | grep -q "-bl2"; then
               TYPE=$(echo "$file" | grep -o "sysupgrade\|factory")
               EXT="${file##*.}"
-              NEW_NAME="${{ matrix.device_model }}_${POWER_MODE}_${{ env.FIRMWARE_VERSION }}_${TYPE}.${EXT}"
+              NEW_NAME="${{ matrix.device_model }}_25dB-on_${{ env.FIRMWARE_VERSION }}_${TYPE}.${EXT}"
               mv "$file" "$NEW_NAME"
             fi
           done
@@ -380,7 +366,6 @@ jobs:
         run: |
           set -e
           cd openwrt/bin/targets/*/*
-          POWER_MODE="${{ env.HAS_25DB == 'true' && '已启用 (5G 25dB)' || '已禁用' }}"
           cat << EOF > README.md
           # ImmortalWrt 固件说明
 
@@ -388,11 +373,11 @@ jobs:
           - **固件版本**: ImmortalWrt ${{ env.FIRMWARE_VERSION }}
           - **设备型号**: ${{ matrix.device_model }}
           - **构建时间**: $(date +"%Y-%m-%d %H:%M %Z")
-          - **高功率模式**: $POWER_MODE
+          - **高功率模式**: 已启用 (5G 25dB)
 
           ## 功能特性
           - 基于 ImmortalWrt ${{ env.FIRMWARE_VERSION }} 构建，优化了网络性能和稳定性。
-          ${{ env.HAS_25DB == 'true' && '- 支持 5G 25dB 高功率模式，提升无线信号覆盖范围。' || '' }}
+          - 支持 5G 25dB 高功率模式，提升无线信号覆盖范围。
           - 包含最新的安全补丁和驱动程序，适用于指定的设备型号。
 
           ## 适用设备
@@ -427,7 +412,6 @@ jobs:
         if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success'
         run: |
           set -e
-          POWER_MODE="${{ env.HAS_25DB == 'true' && '已启用 (5G 25dB)' || '已禁用' }}"
           echo "RELEASE_TAG=ImmortalWrt-24.10-${{ matrix.device_model }}-${{ env.FIRMWARE_VERSION }}" >> $GITHUB_OUTPUT
           cat << EOF > release.txt
           # ImmortalWrt 固件发布
@@ -436,11 +420,11 @@ jobs:
           - **固件版本**: ImmortalWrt ${{ env.FIRMWARE_VERSION }}
           - **设备型号**: ${{ matrix.device_model }}
           - **构建时间**: $(date +"%Y-%m-%d %H:%M %Z")
-          - **高功率模式**: $POWER_MODE
+          - **高功率模式**: 已启用 (5G 25dB)
 
           ## 功能特性
           - 基于 ImmortalWrt ${{ env.FIRMWARE_VERSION }} 构建，优化了网络性能和稳定性。
-          ${{ env.HAS_25DB == 'true' && '- 支持 5G 25dB 高功率模式，提升无线信号覆盖范围。' || '' }}
+          - 支持 5G 25dB 高功率模式，提升无线信号覆盖范围。
           - 包含最新的安全补丁和驱动程序。
           - 支持安卓USB共享上网
           - 支持USB网卡、USB随身wifi。
@@ -515,11 +499,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          CURRENT_TAG="${{ steps.tag.outputs.RELEASE_TAG }}"
-          releases=$(gh release list --repo ${{ github.repository }} --limit 50 --json tagName --jq ".[] | select(.tagName | startswith(\"ImmortalWrt-24.10-${{ matrix.device_model }}-\") and .tagName != \"$CURRENT_TAG\" ) | .tagName")
-          for tag in $releases; do
-            gh release delete "$tag" --yes || echo "警告：无法删除发布 $tag"
-          done
+          gh release list --repo ${{ github.repository }} --limit 20 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10-${{ matrix.device_model }}")) | .name' | tail -n +5 | xargs -I {} gh release delete {} --yes || echo "警告：无法删除发布 {}"
 
       - name: 清理旧工作流运行
         if: steps.tag.outputs.status == 'success'
