@@ -85,6 +85,7 @@
 ## 源码
 - 本工作流基于 [padavanonly/immortalwrt-mt798x-24.10](https://github.com/padavanonly/immortalwrt-mt798x-24.10)。
 - 分支：`openwrt-24.10-6.6`。
+- 仓库 [hhCodingCat/ImWRT-798X](https://github.com/hhCodingCat/ImWRT-798X))。
 
 ## 贡献
 欢迎提交 Issue 或 Pull Request，优化工作流或添加新功能！
