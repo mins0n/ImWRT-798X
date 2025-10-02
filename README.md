@@ -1,6 +1,6 @@
 # ImmortalWrt-Builder-24.10
 
-这是一个用于自动编译 [ImmortalWrt 24.10](https://github.com/padavanonly/immortalwrt-mt798x-24.10) 固件的 GitHub Actions 工作流，专为基于 MediaTek MT7981 芯片的设备设计。支持定期检查源码更新、为多种设备型号编译固件，并将固件文件上传至 GitHub Release 和 WebDAV。
+这是一个用于自动编译 [ImmortalWrt 24.10](https://github.com/padavanonly/immortalwrt-mt798x-24.10) 固件的 GitHub Actions 工作流，专为基于 MediaTek MT7981 芯片的设备设计。支持定期检查源码更新、为多种设备型号编译固件，并将固件文件上传至 GitHub Release 和 WebDAV。本工作流通过直观的下拉列表选择设备型号，操作简单，特别适合小白和无经验的用户快速构建固件。
 
 ## 功能
 
@@ -43,6 +43,7 @@
   - MediaTek HNAT 硬件加速
   - Ksmbd 文件共享
   - 默认管理地址：`192.168.2.1`，密码为空
+- **便捷操作**：通过 GitHub Actions 的下拉列表选择设备型号，无需手动修改配置文件，简单直观，特别适合小白和无经验的用户快速上手。
 
 ## 使用方法
 
@@ -55,11 +56,11 @@
 
 ### 2. 手动触发编译
 - 进入仓库的 **Actions** 页面，选择 `ImmortalWrt-24.10-6.6固件构建` 工作流。
-- 点击 **Run workflow**，选择：
-  - `device_model`：目标设备型号
+- 点击 **Run workflow**，通过下拉列表选择：
+  - `device_model`：目标设备型号（直观选择，无需记住复杂代码）
   - `enable_5g_25db`：是否启用 5G 25dB 增强（默认：启用）
   - 可选：自定义 `repo_url` 和 `repo_branch`
-- 运行后，固件将上传至 GitHub Release 和 WebDAV。
+- 点击运行后，固件将自动编译并上传至 GitHub Release 和 WebDAV，适合零基础用户操作。
 
 ### 3. 定时触发
 - 无需手动操作，工作流每周五北京时间15:00（UTC 07:00）检查源仓库 `padavanonly/immortalwrt-mt798x-24.10` 的 `openwrt-24.10-6.6` 分支。
@@ -85,7 +86,13 @@
 ## 源码
 - 本工作流基于 [padavanonly/immortalwrt-mt798x-24.10](https://github.com/padavanonly/immortalwrt-mt798x-24.10)。
 - 分支：`openwrt-24.10-6.6`。
-- 仓库 [hhCodingCat/ImWRT-798X](https://github.com/hhCodingCat/ImWRT-798X))。
+- 仓库：[hhCodingCat/ImWRT-798X](https://github.com/hhCodingCat/ImWRT-798X)。
+
+## 致谢
+特别感谢以下作者和贡献者：
+- **[P3TERX](https://p3terx.com)**：提供了 `diy-part1.sh` 和 `diy-part2.sh` 脚本的初始框架，为本项目的自动化构建提供了重要支持。
+- **[padavanonly](https://github.com/padavanonly)**：维护了 ImmortalWrt MT798x 24.10 源代码仓库，为本项目提供了核心固件源码。
+- ImmortalWrt 社区的开发者与贡献者：感谢他们的持续努力，确保了固件的性能优化与功能完善。
 
 ## 贡献
 欢迎提交 Issue 或 Pull Request，优化工作流或添加新功能！
