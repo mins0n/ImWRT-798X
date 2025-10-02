@@ -10,118 +10,32 @@ on:
         type: choice
         required: true
         options:
-          - abt_asr3000
-          - acelink_ew-7886cax
-          - acer_predator-w6
-          - acer_predator-w6d
-          - acer_vero-w6m
-          - smartrg_sdg-8612
-          - smartrg_sdg-8614
-          - smartrg_sdg-8622
-          - smartrg_sdg-8632
-          - smartrg_sdg-8733
-          - smartrg_sdg-8733a
-          - smartrg_sdg-8734
-          - asus_rt-ax52
-          - asus_rt-ax59u
-          - asus_tuf-ax4200
-          - arcadyan_mozart
-          - asus_tuf-ax6000
-          - bananapi_bpi-r3
-          - bananapi_bpi-r3-mini
-          - bananapi_bpi-r4
-          - bananapi_bpi-r4-poe
-          - cetron_ct3003
-          - cetron_ct3003-ubootmod
-          - cmcc_a10-stock
-          - cmcc_a10-ubootmod
-          - cmcc_rax3000m-emmc
-          - cmcc_rax3000m
-          - cmcc_rax3000m-stock
-          - cmcc_rax3000me
-          - cmcc_xr30-nand
-          - comfast_cf-e393ax
-          - confiabits_mt7981
-          - cudy_ap3000outdoor-v1
-          - cudy_ap3000-v1
-          - cudy_m3000-v1
-          - cudy_re3000-v1
-          - cudy_tr3000-v1
-          - cudy_tr3000-v1-ubootmod
-          - cudy_tr3000-v1-256mb
-          - cudy_wr3000-v1
-          - cudy_wr3000s-v1
-          - dlink_aquila-pro-ai-m30-a1
-          - dlink_aquila-pro-ai-m60-a1
-          - edgecore_eap111
-          - gatonetworks_gdsp
-          - glinet_gl-mt2500
-          - glinet_gl-mt3000
-          - glinet_gl-mt6000
-          - glinet_gl-x3000
-          - glinet_gl-xe3000
-          - openfi_6c
-          - h3c_magic-nx30-pro
-          - h3c_magic-nx30-pro-nmbm
-          - huasifei_wh3000-pro
-          - Airpi
-          - huasifei_wh3000-emmc
-          - imou_lc-hx3001
-          - jcg_q30-pro
-          - jdcloud_re-cp-03
-          - keenetic_kn-3811
-          - keenetic_kn-3911
-          - konka_komi-a31
-          - livinet_zr-3020
-          - livinet_zr-3020-ubootmod
-          - mediatek_mt7981-rfb
-          - mediatek_mt7986a-rfb-nand
-          - mediatek_mt7986b-rfb
-          - mediatek_mt7988a-rfb
-          - mercusys_mr80x-v3
-          - mercusys_mr90x-v1
-          - mercusys_mr90x-v1-ubi
-          - netcore_n60
-          - netcore_n60-pro
-          - netgear_wax220
-          - netis_nx31
-          - nokia_ea0326gmp
-          - openembed_som7981
-          - openwrt_one
-          - qihoo_360t7
-          - routerich_ax3000
-          - routerich_ax3000-ubootmod
-          - routerich_ax3000-v1
-          - yvr_x6
-          - ruijie_rg-x60-pro
-          - sl_3000-emmc
-          - tplink_re6000xd
-          - tplink_tl-xdr4288
-          - tplink_tl-xdr6086
-          - tplink_tl-xdr6088
-          - tplink_tl-xtr8488
-          - ubnt_unifi-6-plus
-          - umi_uax3000e
-          - unielec_u7981-01-emmc
-          - unielec_u7981-01-nand
-          - wavlink_wl-wn586x3
-          - wavlink_wl-wn573hx3
-          - xiaomi_mi-router-ax3000t
-          - xiaomi_mi-router-ax3000t-ubootmod
-          - xiaomi_mi-router-wr30u-stock
-          - xiaomi_mi-router-wr30u-ubootmod
-          - xiaomi_redmi-router-ax6000-stock
-          - xiaomi_redmi-router-ax6000-ubootmod
-          - yuncore_ax835
-          - zbtlink_zbt-z8102ax
-          - zbtlink_zbt-z8103ax
-          - zyxel_ex5601-t0-stock
-          - zyxel_ex5601-t0-ubootmod
-          - zyxel_ex5700-telenor
-          - zyxel_nwa50ax-pro
-          - wirelesstag_zx7981pg
-          - wirelesstag_zx7981pd
-          - wirelesstag_zx7981pd-ubootmod
+          - cmcc_rax3000m - 中国移动 RAX3000M NAND
+          - cmcc_rax3000m-emmc - 中国移动 RAX3000M eMMC
+          - cudy_ap3000-v1 - Cudy AP3000 AX3000
+          - cudy_ap3000outdoor-v1 - Cudy AP3000 户外版
+          - cudy_m3000-v1 - Cudy M3000 AX3000
+          - cudy_re3000-v1 - Cudy RE3000 AX3000 中继器
+          - cudy_tr3000-v1 - Cudy TR3000 AX3000
+          - cudy_tr3000-v1-256mb - Cudy TR3000 AX3000 256MB
+          - cudy_wr3000-v1 - Cudy WR3000 AX3000
+          - cudy_wr3000s-v1 - Cudy WR3000S AX3000 增强版
+          - glinet_gl-mt2500 - GL.iNet Mango AX MT2500
+          - glinet_gl-mt3000 - GL.iNet Beryl AX MT3000
+          - glinet_gl-x3000 - GL.iNet X3000 LTE
+          - glinet_gl-xe3000 - GL.iNet XE3000 工业级 LTE
+          - h3c_magic-nx30-pro - H3C NX30 Pro 魔术路由器
+          - huasifei_wh3000-pro - 华思飞 WH3000 Pro
+          - huasifei_wh3000-emmc - 华思飞 WH3000 eMMC
+          - jcg_q30-pro - JCG Q30 Pro AX3000
+          - livinet_zr-3020 - Livinet ZR3020 AX3000
+          - routerich_ax3000 - Routerich AX3000
+          - routerich_ax3000-v1 - Routerich AX3000 V1
+          - xiaomi_mi-router-ax3000t - 小米 AX3000T
+          - xiaomi_mi-router-wr30u-stock - 小米 WR30U 原厂
+          - xiaomi_redmi-router-ax6000-stock - 红米 AX6000 原厂
+          - zyxel_ex5601-t0-stock - 合勤 EX5601-T0 原厂
+          - zyxel_nwa50ax-pro - 合勤 NWA50AX Pro AP
 
 
       enable_5g_25db:
@@ -211,7 +125,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m", "cmcc_rax3000m-emmc"]') }}
+        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m", "cmcc_rax3000m-emmc", "cudy_ap3000-v1", "cudy_ap3000outdoor-v1", "cudy_m3000-v1", "cudy_re3000-v1", "cudy_tr3000-v1", "cudy_tr3000-v1-256mb", "cudy_wr3000-v1", "cudy_wr3000s-v1", "glinet_gl-mt2500", "glinet_gl-mt3000", "glinet_gl-x3000", "glinet_gl-xe3000", "h3c_magic-nx30-pro", "huasifei_wh3000-pro", "huasifei_wh3000-emmc", "jcg_q30-pro", "livinet_zr-3020", "routerich_ax3000", "routerich_ax3000-v1", "xiaomi_mi-router-ax3000t", "xiaomi_mi-router-wr30u-stock", "xiaomi_redmi-router-ax6000-stock", "zyxel_ex5601-t0-stock", "zyxel_nwa50ax-pro"]') }}
       max-parallel: 18
     steps:
       - name: 打印调试信息
@@ -220,6 +134,13 @@ jobs:
           echo "设备型号：${{ matrix.device_model }}"
           echo "5G 25dB：${{ env.ENABLE_5G_25DB }}"
           echo "源代码仓库：${{ env.REPO_URL }} 分支：${{ env.REPO_BRANCH }}"
+
+      - name: 解析设备型号
+        id: parse_model
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          ACTUAL_MODEL=$(echo "${{ matrix.device_model }}" | cut -d' ' -f1)
+          echo "actual_device_model=$ACTUAL_MODEL" >> $GITHUB_OUTPUT
 
       - name: 检出仓库
         uses: actions/checkout@v4
@@ -342,10 +263,16 @@ jobs:
         run: |
           [ -e files ] && mv files openwrt/files
           [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_${{ matrix.device_model }}=y" >> openwrt/.config
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            DEVICE_MODEL="${{ steps.parse_model.outputs.actual_device_model }}"
+          else
+            DEVICE_MODEL="${{ matrix.device_model }}"
+          fi
+          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_${DEVICE_MODEL}=y" >> openwrt/.config
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P2_SH
           make defconfig
+          echo "DEVICE_MODEL=$DEVICE_MODEL" >> $GITHUB_ENV
 
       - name: 下载软件包
         timeout-minutes: 20
@@ -384,13 +311,13 @@ jobs:
           cd openwrt
           make -j$(nproc) V=s || make -j4 V=s || make -j1 V=s
           echo "status=success" >> $GITHUB_OUTPUT
-          echo "DEVICE_NAME=_${{ matrix.device_model }}" >> $GITHUB_ENV
+          echo "DEVICE_NAME=_${{ env.DEVICE_MODEL }}" >> $GITHUB_ENV
 
       - name: 上传编译日志
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: compile-log-${{ matrix.device_model }}
+          name: compile-log-${{ env.DEVICE_MODEL }}
           path: |
             openwrt/build_dir/**/*
             openwrt/logs/**/*
@@ -450,7 +377,7 @@ jobs:
             if [ -f "$file" ] && ! echo "$file" | grep -q "-bl2"; then
               TYPE=$(echo "$file" | grep -o "sysupgrade\|factory")
               EXT="${file##*.}"
-              NEW_NAME="${{ matrix.device_model }}_25dB-on_${{ env.FIRMWARE_VERSION }}_${TYPE}.${EXT}"
+              NEW_NAME="${{ env.DEVICE_MODEL }}_25dB-on_${{ env.FIRMWARE_VERSION }}_${TYPE}.${EXT}"
               mv "$file" "$NEW_NAME"
             fi
           done
@@ -467,9 +394,10 @@ jobs:
 
           ## 固件信息
           - **固件版本**: ImmortalWrt ${{ env.FIRMWARE_VERSION }}
-          - **设备型号**: ${{ matrix.device_model }}
+          - **设备型号**: ${{ env.DEVICE_MODEL }}
           - **构建时间**: $(date +"%Y-%m-%d %H:%M %Z")
           - **高功率模式**: 已启用 (5G 25dB)
+          - **固件来源仓库**: ${{ env.REPO_URL }} (分支: ${{ env.REPO_BRANCH }})
 
           ## 功能特性
           - 基于 ImmortalWrt ${{ env.FIRMWARE_VERSION }} 构建，优化了网络性能和稳定性。
@@ -478,7 +406,7 @@ jobs:
 
           ## 适用设备
           本固件适用于以下设备型号：
-          - ${{ matrix.device_model }}
+          - ${{ env.DEVICE_MODEL }}
 
           ## 安装说明
           1. **备份现有配置**：在升级固件前，请备份路由器的现有配置。
@@ -508,13 +436,13 @@ jobs:
         if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success'
         run: |
           set -e
-          echo "RELEASE_TAG=ImmortalWrt-24.10-${{ matrix.device_model }}-${{ env.FIRMWARE_VERSION }}" >> $GITHUB_OUTPUT
+          echo "RELEASE_TAG=ImmortalWrt-24.10-${{ env.DEVICE_MODEL }}-${{ env.FIRMWARE_VERSION }}" >> $GITHUB_OUTPUT
           cat << EOF > release.txt
           # ImmortalWrt 固件发布
 
           ## 固件信息
           - **固件版本**: ImmortalWrt ${{ env.FIRMWARE_VERSION }}
-          - **设备型号**: ${{ matrix.device_model }}
+          - **设备型号**: ${{ env.DEVICE_MODEL }}
           - **构建时间**: $(date +"%Y-%m-%d %H:%M %Z")
           - **高功率模式**: 已启用 (5G 25dB)
 
@@ -575,7 +503,11 @@ jobs:
           fi
           echo "找到文件：$FIRMWARE_FILES"
           for FILE in $FIRMWARE_FILES; do
-            NEW_NAME=$(basename "$FILE")
+            if echo "$FILE" | grep -q "README.md"; then
+              NEW_NAME="${{ env.DEVICE_MODEL }}-README.md"
+            else
+              NEW_NAME=$(basename "$FILE")
+            fi
             echo "计算 $FILE 的校验和"
             SHA256=$(sha256sum "$FILE" | cut -d' ' -f1)
             echo "上传：$FILE → $NEW_NAME"
@@ -595,7 +527,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release list --repo ${{ github.repository }} --limit 20 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10-${{ matrix.device_model }}")) | .name' | tail -n +5 | xargs -I {} gh release delete {} --yes || echo "警告：无法删除发布 {}"
+          gh release list --repo ${{ github.repository }} --limit 20 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10-${{ env.DEVICE_MODEL }}")) | .name' | tail -n +5 | xargs -I {} gh release delete {} --yes || echo "警告：无法删除发布 {}"
 
       - name: 清理旧工作流运行
         if: steps.tag.outputs.status == 'success'
