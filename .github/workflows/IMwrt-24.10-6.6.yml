@@ -12,7 +12,6 @@ on:
         options:
           - 中国移动 RAX3000M eMMC
 
-
       enable_5g_25db:
         description: '启用5G 25dB修改'
         type: boolean
